@@ -56,7 +56,7 @@ Ce backend doit permettre de :
 - assurer une architecture modulaire facile à maintenir
 - permettre l’évolution future du système
 
-
+---
 
 ## 4. Stack technique
 
