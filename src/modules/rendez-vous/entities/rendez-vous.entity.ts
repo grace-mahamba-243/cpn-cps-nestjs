@@ -35,6 +35,10 @@ export class RendezVousEntity {
   @Column({ type: 'varchar', length: 10, name: 'initiales_patient' })
   initialesPatient: string;
 
+  // Type de patient : Mere | Enfant
+  @Column({ type: 'varchar', length: 10, name: 'type_patient', nullable: true })
+  typePatient: string | null;
+
   // Numero de dossier lisible (ex: #89210)
   @Column({ type: 'varchar', length: 20, name: 'ref_dossier', nullable: true })
   refDossier: string | null;
@@ -42,6 +46,14 @@ export class RendezVousEntity {
   // Service de destination apres orientation administrative
   @Column({ type: 'varchar', length: 60, name: 'service_destination', nullable: true })
   serviceDestination: string | null;
+
+  // Observations complementaires saisies lors de la prise de rendez-vous
+  @Column({ type: 'text', nullable: true })
+  observations: string | null;
+
+  // Nom de l agent qui a enregistre le rendez-vous
+  @Column({ type: 'varchar', length: 200, name: 'cree_par', nullable: true })
+  creePar: string | null;
 
   @CreateDateColumn({ name: 'cree_le' })
   creeLe: Date;

@@ -1,0 +1,80 @@
+import {
+  IsDateString,
+  IsIn,
+  IsInt,
+  IsOptional,
+  IsString,
+  MaxLength,
+  Min,
+} from 'class-validator';
+
+// Ce DTO valide les donnees requises pour ouvrir un dossier CPN.
+export class CreerDossierCpnDto {
+  @IsString()
+  patienteId!: string;
+
+  @IsDateString()
+  dateOuverture!: string;
+
+  @IsInt()
+  @Min(0)
+  gestite!: number;
+
+  @IsInt()
+  @Min(0)
+  parite!: number;
+
+  @IsInt()
+  @Min(0)
+  nombreAvortements!: number;
+
+  @IsOptional()
+  @IsDateString()
+  derniersRegles?: string | null;
+
+  @IsOptional()
+  @IsDateString()
+  dateProbableAccouchement?: string | null;
+
+  @IsOptional()
+  @IsInt()
+  @Min(0)
+  ageGestionnelOuverture?: number | null;
+
+  @IsOptional()
+  @IsString()
+  antecedentsMedicaux?: string | null;
+
+  @IsOptional()
+  @IsString()
+  antecedentsChirurgicaux?: string | null;
+
+  @IsOptional()
+  @IsString()
+  antecedentsGynecologiques?: string | null;
+
+  @IsOptional()
+  @IsString()
+  antecedentsObstetricaux?: string | null;
+
+  @IsOptional()
+  @IsString()
+  @MaxLength(200)
+  allergies?: string | null;
+
+  @IsOptional()
+  @IsIn(['A', 'B', 'AB', 'O'])
+  groupeSanguin?: string | null;
+
+  @IsOptional()
+  @IsIn(['+', '-'])
+  rhesus?: string | null;
+
+  @IsOptional()
+  @IsIn(['POSITIF', 'NEGATIF', 'INCONNU'])
+  vihStatut?: string;
+
+  @IsOptional()
+  @IsString()
+  notes?: string | null;
+}
