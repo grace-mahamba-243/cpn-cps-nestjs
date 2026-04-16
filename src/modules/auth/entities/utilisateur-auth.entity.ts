@@ -30,7 +30,7 @@ export class UtilisateurAuthEntity {
   @Column({ type: 'varchar', length: 30, nullable: true })
   telephone!: string | null;
 
-  @Column({ type: 'varchar', length: 180, nullable: true })
+  @Column({ type: 'varchar', length: 180, nullable: true, unique: true })
   email!: string | null;
 
   @Column({ type: 'varchar', length: 255, nullable: true })

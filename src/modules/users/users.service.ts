@@ -1,6 +1,6 @@
-import { Injectable, NotFoundException } from '@nestjs/common';
+import { ConflictException, Injectable, NotFoundException } from '@nestjs/common';
 import { InjectRepository } from '@nestjs/typeorm';
-import { Repository } from 'typeorm';
+import { Not, Repository } from 'typeorm';
 import { RoleEntity } from '../auth/entities/role.entity';
 import { UtilisateurAuthEntity } from '../auth/entities/utilisateur-auth.entity';
 import { CreateUserDto } from './dto/create-user.dto';
@@ -52,6 +52,18 @@ export class UsersService {
       throw new NotFoundException('Le role selectionne est introuvable.');
     }
 
+    const emailNormalise = createUserDto.email?.trim().toLowerCase() || null;
+    if (emailNormalise) {
+      const emailExistant = await this.utilisateursRepository.findOne({
+        where: { email: emailNormalise },
+      });
+      if (emailExistant) {
+        throw new ConflictException(
+          `L'adresse email "${emailNormalise}" est deja utilisee par un autre utilisateur.`,
+        );
+      }
+    }
+
     const identifiant = await this.genererIdentifiant(createUserDto.nomComplet);
     const utilisateur = this.utilisateursRepository.create({
       identifiant,
@@ -97,6 +109,20 @@ export class UsersService {
       role = roleTrouve;
     }
 
+    if (typeof updateUserDto.email !== 'undefined') {
+      const emailNormalise = updateUserDto.email?.trim().toLowerCase() || null;
+      if (emailNormalise && emailNormalise !== utilisateur.email) {
+        const emailExistant = await this.utilisateursRepository.findOne({
+          where: { email: emailNormalise, id: Not(id) },
+        });
+        if (emailExistant) {
+          throw new ConflictException(
+            `L'adresse email "${emailNormalise}" est deja utilisee par un autre utilisateur.`,
+          );
+        }
+      }
+    }
+
     Object.assign(utilisateur, {
       nomAffichage: updateUserDto.nomComplet?.trim() || utilisateur.nomAffichage,
       sexe: updateUserDto.sexe ? updateUserDto.sexe.trim().toUpperCase() : utilisateur.sexe,
@@ -108,10 +134,10 @@ export class UsersService {
         typeof updateUserDto.telephone !== 'undefined'
           ? updateUserDto.telephone?.trim() || null
           : utilisateur.telephone,
-      email:
-        typeof updateUserDto.email !== 'undefined'
-          ? updateUserDto.email?.trim().toLowerCase() || null
-          : utilisateur.email,
+      email: (() => {
+        if (typeof updateUserDto.email === 'undefined') return utilisateur.email;
+        return updateUserDto.email?.trim().toLowerCase() || null;
+      })(),
       adresse:
         typeof updateUserDto.adresse !== 'undefined'
           ? updateUserDto.adresse?.trim() || null

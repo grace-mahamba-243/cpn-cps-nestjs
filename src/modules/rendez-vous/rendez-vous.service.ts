@@ -1,6 +1,6 @@
-import { Injectable, NotFoundException } from '@nestjs/common';
+import { ConflictException, Injectable, NotFoundException } from '@nestjs/common';
 import { InjectRepository } from '@nestjs/typeorm';
-import { Between, Like, Repository } from 'typeorm';
+import { Between, ILike, In, Like, Not, Repository } from 'typeorm';
 import { RendezVousEntity } from './entities/rendez-vous.entity';
 import { ResumeTableauBordReceptionDto } from './dto/resume-tableau-bord-reception.dto';
 import { CreerRendezVousDto } from './dto/creer-rendez-vous.dto';
@@ -30,8 +30,8 @@ export class RendezVousService {
       where.statut = filtres.statut;
     }
 
-    if (filtres?.typeRdv) {
-      where.typeRdv = filtres.typeRdv;
+    if (filtres?.refDossier) {
+      where.refDossier = ILike(`%${filtres.refDossier}%`);
     }
 
     if (filtres?.serviceDestination) {
@@ -65,13 +65,30 @@ export class RendezVousService {
   }
 
   // Cree un nouveau rendez-vous a partir du DTO valide.
+  // Leve une ConflictException si le patient a deja un RDV actif ce meme jour.
   async creer(dto: CreerRendezVousDto): Promise<RendezVousEntity> {
+    // Contrainte : un seul RDV actif par patient par jour
+    if (dto.refDossier && dto.dateRdv) {
+      const existant = await this.rendezVousRepository.findOne({
+        where: {
+          refDossier: dto.refDossier,
+          dateRdv: dto.dateRdv,
+          statut: Not(In(['ANNULE', 'TERMINE'])),
+        },
+      });
+      if (existant) {
+        throw new ConflictException(
+          `Ce patient a deja un rendez-vous prevu le ${dto.dateRdv}. Impossible d en creer un second le meme jour.`,
+        );
+      }
+    }
+
     const entite = this.rendezVousRepository.create({
       dateRdv: dto.dateRdv,
       heureRdv: dto.heureRdv,
       motif: dto.motif,
       statut: dto.statut ?? 'EN_ATTENTE',
-      typeRdv: dto.typeRdv,
+      typeRdv: dto.typeRdv ?? 'PROGRAMME',
       nomPatient: dto.nomPatient,
       initialesPatient: dto.initialesPatient,
       typePatient: dto.typePatient ?? null,
@@ -99,23 +116,48 @@ export class RendezVousService {
     return this.rendezVousRepository.save(rdv);
   }
 
+  // Annule un RDV programme et cree un nouveau avec statut ARRIVE pour aujourd hui.
+  // Le RDV annule reste en base de donnees et apparait dans l historique.
+  async remplacerParArrivee(ancienRdvId: string): Promise<RendezVousEntity> {
+    const ancien = await this.findOne(ancienRdvId);
+
+    // Annuler l ancien rendez-vous (reste visible dans l historique)
+    ancien.statut = 'ANNULE';
+    await this.rendezVousRepository.save(ancien);
+
+    // Creer le nouveau rendez-vous pour aujourd hui avec statut ARRIVE
+    const maintenant = new Date();
+    const dateAujourdhui = maintenant.toISOString().split('T')[0];
+    const heureNow = `${String(maintenant.getHours()).padStart(2, '0')}:${String(maintenant.getMinutes()).padStart(2, '0')}`;
+
+    const nouveau = this.rendezVousRepository.create({
+      dateRdv: dateAujourdhui,
+      heureRdv: heureNow,
+      motif: ancien.motif,
+      statut: 'ARRIVE',
+      typeRdv: 'PROGRAMME',
+      nomPatient: ancien.nomPatient,
+      initialesPatient: ancien.initialesPatient,
+      typePatient: ancien.typePatient,
+      refDossier: ancien.refDossier,
+      serviceDestination: ancien.serviceDestination,
+      observations: ancien.observations,
+      creePar: ancien.creePar,
+    });
+
+    return this.rendezVousRepository.save(nouveau);
+  }
+
   // Retourne le resume du jour pour le tableau de bord de la reception.
-  // Les donnees simulees sont retournees jusqu a ce que la base soit populee.
   async getResumeDuJour(): Promise<ResumeTableauBordReceptionDto> {
     const dateAujourdhui = new Date().toISOString().split('T')[0];
 
-    const [rdvPlanifies, rdvSurprise] = await Promise.all([
-      this.rendezVousRepository.find({
-        where: { dateRdv: dateAujourdhui, typeRdv: 'PROGRAMME' },
-        order: { heureRdv: 'ASC' },
-      }),
-      this.rendezVousRepository.find({
-        where: { dateRdv: dateAujourdhui, typeRdv: 'SURPRISE' },
-        order: { heureRdv: 'ASC' },
-      }),
-    ]);
+    const rdvDuJour = await this.rendezVousRepository.find({
+      where: { dateRdv: dateAujourdhui },
+      order: { heureRdv: 'ASC' },
+    });
 
-    const arrivees = rdvPlanifies.filter(
+    const arrivees = rdvDuJour.filter(
       (rdv) => rdv.statut === 'ARRIVE' || rdv.statut === 'TERMINE',
     ).length;
 
@@ -130,11 +172,9 @@ export class RendezVousService {
     });
 
     return {
-      rdvDuJour: rdvPlanifies.length,
+      rdvDuJour: rdvDuJour.length,
       arrivees,
-      surprises: rdvSurprise.length,
-      rdvPlanifies: rdvPlanifies.map(formater),
-      rdvSurprise: rdvSurprise.map(formater),
+      rdvPlanifies: rdvDuJour.map(formater),
     };
   }
 }
