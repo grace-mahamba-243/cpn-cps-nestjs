@@ -1,7 +1,9 @@
 import {
+  IsArray,
   IsDateString,
   IsIn,
   IsInt,
+  IsNumber,
   IsOptional,
   IsString,
   MaxLength,
@@ -77,4 +79,22 @@ export class CreerDossierCpnDto {
   @IsOptional()
   @IsString()
   notes?: string | null;
+
+  @IsOptional()
+  @IsArray()
+  @IsString({ each: true })
+  facteursRisque?: string[] | null;
+
+  @IsOptional()
+  @IsNumber()
+  @Min(0)
+  taille?: number | null;
+
+  @IsOptional()
+  @IsString()
+  utilisateurId?: string;
+
+  @IsOptional()
+  @IsString()
+  utilisateurNom?: string;
 }
