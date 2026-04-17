@@ -66,6 +66,35 @@ export class CreerContactCpnDto {
   varices?: boolean | null;
 
   @IsOptional()
+  @IsIn(['BON', 'PASSABLE', 'CRITIQUE'])
+  etatGeneral?: string | null;
+
+  @IsOptional()
+  @IsNumber()
+  @Min(0)
+  perimetreBrachial?: number | null;
+
+  @IsOptional()
+  @IsIn(['NEGATIF', 'TRACES', '1+', '2+', '3+'])
+  proteInurie?: string | null;
+
+  @IsOptional()
+  @IsBoolean()
+  paleur?: boolean | null;
+
+  @IsOptional()
+  @IsBoolean()
+  ecoulementVaginal?: boolean | null;
+
+  @IsOptional()
+  @IsBoolean()
+  ulcerationsGenitales?: boolean | null;
+
+  @IsOptional()
+  @IsString()
+  etatDuCol?: string | null;
+
+  @IsOptional()
   @IsString()
   observations?: string | null;
 
@@ -81,4 +110,13 @@ export class CreerContactCpnDto {
   @IsString()
   @MaxLength(300)
   prochainRdvNotes?: string | null;
+
+  // Identification de l'utilisateur qui effectue l'action (pour le journal)
+  @IsOptional()
+  @IsString()
+  utilisateurId?: string;
+
+  @IsOptional()
+  @IsString()
+  utilisateurNom?: string;
 }

@@ -1,4 +1,5 @@
-import { Injectable, NotFoundException } from '@nestjs/common';
+import { BadRequestException, ConflictException, Injectable, NotFoundException } from '@nestjs/common';
+import OpenAI from 'openai';
 import { InjectRepository } from '@nestjs/typeorm';
 import { Like, Repository } from 'typeorm';
 import { DossierCpnEntity } from './entities/dossier-cpn.entity';
@@ -9,12 +10,16 @@ import { CreerDossierCpnDto } from './dto/creer-dossier-cpn.dto';
 import { ModifierDossierCpnDto } from './dto/modifier-dossier-cpn.dto';
 import { CreerContactCpnDto } from './dto/creer-contact-cpn.dto';
 import { ModifierContactCpnDto } from './dto/modifier-contact-cpn.dto';
+import { AnalyserContactCpnDto } from './dto/analyser-contact-cpn.dto';
 import { CreerExamenCpnDto } from './dto/creer-examen-cpn.dto';
 import { ModifierExamenCpnDto } from './dto/modifier-examen-cpn.dto';
+import { JournalService } from '../journal/journal.service';
 
 // Ce service centralise toute la logique metier du module CPN.
 @Injectable()
 export class CpnService {
+  private readonly openai = new OpenAI({ apiKey: process.env.OPENAI_API_KEY });
+
   constructor(
     @InjectRepository(DossierCpnEntity)
     private readonly dossiersRepo: Repository<DossierCpnEntity>,
@@ -24,6 +29,7 @@ export class CpnService {
     private readonly examensRepo: Repository<ExamenCpnEntity>,
     @InjectRepository(PatienteEntity)
     private readonly patientesRepo: Repository<PatienteEntity>,
+    private readonly journalService: JournalService,
   ) {}
 
   // --- Dossiers CPN ---
@@ -51,12 +57,14 @@ export class CpnService {
       dossiers = await this.dossiersRepo
         .createQueryBuilder('d')
         .leftJoinAndSelect('d.patiente', 'p')
+        .leftJoinAndSelect('d.contacts', 'c')
         .where('d.patiente_id IN (:...ids)', { ids })
         .orderBy('d.cree_le', 'DESC')
+        .addOrderBy('c.numero_contact', 'DESC')
         .getMany();
     } else {
       dossiers = await this.dossiersRepo.find({
-        relations: ['patiente'],
+        relations: ['patiente', 'contacts'],
         order: { creeLe: 'DESC' },
       });
     }
@@ -113,9 +121,21 @@ export class CpnService {
       rhesus: dto.rhesus ?? null,
       vihStatut: dto.vihStatut ?? 'INCONNU',
       notes: dto.notes ?? null,
+      facteursRisque: dto.facteursRisque ? JSON.stringify(dto.facteursRisque) : null,
+      taille: dto.taille ?? null,
     });
 
     const enregistre = await this.dossiersRepo.save(dossier);
+
+    void this.journalService.enregistrer({
+      utilisateurId: dto.utilisateurId,
+      utilisateurNom: dto.utilisateurNom,
+      typeAction: 'CREATION',
+      module: 'CPN',
+      section: 'Dossier',
+      ressourceId: enregistre.id,
+      description: `Ouverture du dossier CPN ${enregistre.numeroDossierCpn}`,
+    });
 
     return {
       message: 'Dossier CPN ouvert avec succes.',
@@ -166,9 +186,24 @@ export class CpnService {
       rhesus: typeof dto.rhesus !== 'undefined' ? dto.rhesus : dossier.rhesus,
       vihStatut: dto.vihStatut ?? dossier.vihStatut,
       notes: typeof dto.notes !== 'undefined' ? dto.notes : dossier.notes,
+      facteursRisque:
+        typeof dto.facteursRisque !== 'undefined'
+          ? (dto.facteursRisque ? JSON.stringify(dto.facteursRisque) : null)
+          : dossier.facteursRisque,
+      taille: typeof dto.taille !== 'undefined' ? dto.taille : dossier.taille,
     });
 
     const enregistre = await this.dossiersRepo.save(dossier);
+
+    void this.journalService.enregistrer({
+      utilisateurId: dto.utilisateurId,
+      utilisateurNom: dto.utilisateurNom,
+      typeAction: 'MODIFICATION',
+      module: 'CPN',
+      section: 'Dossier',
+      ressourceId: enregistre.id,
+      description: `Modification du dossier CPN ${enregistre.numeroDossierCpn ?? id}`,
+    });
 
     return {
       message: 'Dossier CPN mis a jour.',
@@ -183,6 +218,19 @@ export class CpnService {
 
     if (!dossier) {
       throw new NotFoundException(`Dossier CPN #${dossierId} introuvable.`);
+    }
+
+    // Vérifier si un contact existe déjà pour cette date
+    const contactExistant = await this.contactsRepo.findOne({
+      where: { dossierCpnId: dossierId, dateContact: dto.dateContact },
+    });
+
+    if (contactExistant) {
+      throw new ConflictException({
+        message: `Un contact CPN existe deja pour le ${dto.dateContact}.`,
+        code: 'CONTACT_DOUBLON_DATE',
+        contactId: contactExistant.id,
+      });
     }
 
     const nombreExistants = await this.contactsRepo.count({
@@ -205,6 +253,13 @@ export class CpnService {
       mouvementsActifs: dto.mouvementsActifs ?? null,
       oedemes: dto.oedemes ?? null,
       varices: dto.varices ?? null,
+      etatGeneral: dto.etatGeneral ?? null,
+      perimetreBrachial: dto.perimetreBrachial ?? null,
+      proteInurie: dto.proteInurie ?? null,
+      paleur: dto.paleur ?? null,
+      ecoulementVaginal: dto.ecoulementVaginal ?? null,
+      ulcerationsGenitales: dto.ulcerationsGenitales ?? null,
+      etatDuCol: dto.etatDuCol ?? null,
       observations: dto.observations ?? null,
       traitementPrescrit: dto.traitementPrescrit ?? null,
       prochainRdvDate: dto.prochainRdvDate ?? null,
@@ -212,6 +267,20 @@ export class CpnService {
     });
 
     const enregistre = await this.contactsRepo.save(contact);
+
+    // Journal
+    if (dto.utilisateurId && dto.utilisateurNom) {
+      void this.journalService.enregistrer({
+        utilisateurId: dto.utilisateurId,
+        utilisateurNom: dto.utilisateurNom,
+        typeAction: 'CREATION',
+        module: 'CPN',
+        section: 'CONTACT',
+        ressourceId: enregistre.id,
+        description: `Création du contact CPN n°${enregistre.numeroContact} pour le dossier ${dossierId}`,
+        meta: { dossierId, contactId: enregistre.id, numeroContact: enregistre.numeroContact },
+      });
+    }
 
     return {
       message: `Contact CPN ${enregistre.numeroContact} enregistre avec succes.`,
@@ -262,6 +331,13 @@ export class CpnService {
         typeof dto.mouvementsActifs !== 'undefined' ? dto.mouvementsActifs : contact.mouvementsActifs,
       oedemes: typeof dto.oedemes !== 'undefined' ? dto.oedemes : contact.oedemes,
       varices: typeof dto.varices !== 'undefined' ? dto.varices : contact.varices,
+      etatGeneral: typeof dto.etatGeneral !== 'undefined' ? dto.etatGeneral : contact.etatGeneral,
+      perimetreBrachial: typeof dto.perimetreBrachial !== 'undefined' ? dto.perimetreBrachial : contact.perimetreBrachial,
+      proteInurie: typeof dto.proteInurie !== 'undefined' ? dto.proteInurie : contact.proteInurie,
+      paleur: typeof dto.paleur !== 'undefined' ? dto.paleur : contact.paleur,
+      ecoulementVaginal: typeof dto.ecoulementVaginal !== 'undefined' ? dto.ecoulementVaginal : contact.ecoulementVaginal,
+      ulcerationsGenitales: typeof dto.ulcerationsGenitales !== 'undefined' ? dto.ulcerationsGenitales : contact.ulcerationsGenitales,
+      etatDuCol: typeof dto.etatDuCol !== 'undefined' ? dto.etatDuCol : contact.etatDuCol,
       observations: typeof dto.observations !== 'undefined' ? dto.observations : contact.observations,
       traitementPrescrit:
         typeof dto.traitementPrescrit !== 'undefined' ? dto.traitementPrescrit : contact.traitementPrescrit,
@@ -272,6 +348,20 @@ export class CpnService {
     });
 
     const enregistre = await this.contactsRepo.save(contact);
+
+    // Journal
+    if (dto.utilisateurId && dto.utilisateurNom) {
+      void this.journalService.enregistrer({
+        utilisateurId: dto.utilisateurId,
+        utilisateurNom: dto.utilisateurNom,
+        typeAction: 'MODIFICATION',
+        module: 'CPN',
+        section: 'CONTACT',
+        ressourceId: contactId,
+        description: `Modification du contact CPN n°${enregistre.numeroContact} pour le dossier ${dossierId}`,
+        meta: { dossierId, contactId },
+      });
+    }
 
     return {
       message: 'Contact CPN mis a jour.',
@@ -332,6 +422,39 @@ export class CpnService {
     };
   }
 
+  // Saisie de l'interprétation d'une échographie (patiente revient avec images)
+  async entrerInterpretationEchographie(dossierId: string, examenId: string, dto: { interpretation: string }) {
+    const examen = await this.examensRepo.findOne({ where: { id: examenId, dossierCpnId: dossierId } });
+    if (!examen) {
+      throw new NotFoundException(`Examen #${examenId} introuvable.`);
+    }
+    if (examen.typeExamen !== 'ECHOGRAPHIE') {
+      throw new BadRequestException("Cet examen n'est pas une échographie.");
+    }
+
+    // Chercher si un contact a été créé aujourd'hui pour ce dossier
+    const today = new Date().toISOString().split('T')[0];
+    const contactDuJour = await this.contactsRepo.findOne({
+      where: { dossierCpnId: dossierId, dateContact: today },
+    });
+
+    if (!contactDuJour) {
+      throw new ConflictException({
+        code: 'PAS_CONTACT_AUJOURD_HUI',
+        message: "Aucun contact CPN créé pour aujourd'hui. Créez d'abord un contact pour enregistrer l'interprétation.",
+      });
+    }
+
+    examen.resultat = dto.interpretation.trim();
+    examen.statut = 'RESULTAT_RECU';
+    examen.dateResultat = today;
+    examen.contactCpnId = contactDuJour.id;
+    examen.envoyeLe = new Date();
+
+    const enregistre = await this.examensRepo.save(examen);
+    return { message: "Interprétation de l'échographie enregistrée.", examen: this.formaterExamen(enregistre) };
+  }
+
   async listerExamens(dossierId: string) {
     const dossier = await this.dossiersRepo.findOne({ where: { id: dossierId } });
 
@@ -350,6 +473,8 @@ export class CpnService {
   // --- Formatage ---
 
   private formaterDossierResume(dossier: DossierCpnEntity) {
+    const contacts = dossier.contacts ?? [];
+    const dernierContact = contacts.sort((a, b) => b.numeroContact - a.numeroContact)[0] ?? null;
     return {
       id: dossier.id,
       numeroDossierCpn: dossier.numeroDossierCpn,
@@ -361,7 +486,11 @@ export class CpnService {
         : null,
       numeroDossierPatiente: dossier.patiente?.numeroDossier ?? null,
       telephonePatiente: dossier.patiente?.telephone ?? null,
+      dateNaissancePatiente: dossier.patiente?.dateNaissance ?? null,
       ageGestionnelOuverture: dossier.ageGestionnelOuverture,
+      dernierAgeGestationnel: dernierContact?.ageGestationnel ?? null,
+      prochainRdvDate: dernierContact?.prochainRdvDate ?? null,
+      nombreContacts: contacts.length,
       derniersRegles: dossier.derniersRegles,
       dateProbableAccouchement: dossier.dateProbableAccouchement,
       gestite: dossier.gestite,
@@ -371,6 +500,7 @@ export class CpnService {
   }
 
   private formaterDossierComplet(dossier: DossierCpnEntity) {
+    const p = dossier.patiente;
     return {
       ...this.formaterDossierResume(dossier),
       nombreAvortements: dossier.nombreAvortements,
@@ -383,6 +513,29 @@ export class CpnService {
       rhesus: dossier.rhesus,
       vihStatut: dossier.vihStatut,
       notes: dossier.notes,
+      facteursRisque: dossier.facteursRisque ? JSON.parse(dossier.facteursRisque) : [],
+      taille: dossier.taille,
+      patiente: p
+        ? {
+            id: p.id,
+            numeroDossier: p.numeroDossier,
+            nom: p.nom,
+            postnom: p.postnom,
+            prenom: p.prenom,
+            dateNaissance: p.dateNaissance,
+            age: p.age,
+            adresse: p.adresse,
+            telephone: p.telephone,
+            etatMatrimonial: p.etatMatrimonial,
+            nomPartenaire: p.nomPartenaire,
+            occupationFemme: p.occupationFemme,
+            occupationHomme: p.occupationHomme,
+            personneUrgence: p.personneUrgence,
+            telephoneUrgence: p.telephoneUrgence,
+            adresseUrgence: p.adresseUrgence,
+            dateEnregistrement: p.dateEnregistrement,
+          }
+        : null,
       contacts: (dossier.contacts ?? []).map((c) => this.formaterContact(c)),
       examens: (dossier.examens ?? []).map((e) => this.formaterExamen(e)),
       misAJourLe: dossier.misAJourLe,
@@ -407,6 +560,13 @@ export class CpnService {
       mouvementsActifs: contact.mouvementsActifs,
       oedemes: contact.oedemes,
       varices: contact.varices,
+      etatGeneral: contact.etatGeneral,
+      perimetreBrachial: contact.perimetreBrachial,
+      proteInurie: contact.proteInurie,
+      paleur: contact.paleur,
+      ecoulementVaginal: contact.ecoulementVaginal,
+      ulcerationsGenitales: contact.ulcerationsGenitales,
+      etatDuCol: contact.etatDuCol,
       observations: contact.observations,
       traitementPrescrit: contact.traitementPrescrit,
       prochainRdvDate: contact.prochainRdvDate,
@@ -430,6 +590,166 @@ export class CpnService {
       dateResultat: examen.dateResultat,
       notes: examen.notes,
       creeLe: examen.creeLe,
+    };
+  }
+
+  // --- Analyse clinique assistée (GPT-4o) ---
+
+  async analyserContact(dossierId: string, dto: AnalyserContactCpnDto) {
+    const dossier = await this.dossiersRepo.findOne({
+      where: { id: dossierId },
+      relations: ['patiente', 'contacts'],
+    });
+
+    if (!dossier) {
+      throw new NotFoundException(`Dossier CPN #${dossierId} introuvable.`);
+    }
+
+    const contacts = (dossier.contacts ?? []).sort((a, b) => a.numeroContact - b.numeroContact);
+
+    // Tableau comparatif : tous les contacts passés + contact actuel
+    const tableau = [
+      ...contacts.map((c) => ({
+        contact: c.numeroContact,
+        date: c.dateContact,
+        poids: c.poids != null ? `${c.poids} kg` : '—',
+        tension: c.tensionSystolique != null ? `${c.tensionSystolique}/${c.tensionDiastolique}` : '—',
+        bfc: c.bfc != null ? `${c.bfc} bpm` : '—',
+        hu: c.hauteurUterine != null ? `${c.hauteurUterine} cm` : '—',
+        proteInurie: c.proteInurie ?? '—',
+        ag: c.ageGestationnel != null ? `${c.ageGestationnel} SA` : '—',
+        estActuel: false,
+      })),
+      {
+        contact: contacts.length + 1,
+        date: new Date().toISOString().slice(0, 10),
+        poids: dto.poids != null ? `${dto.poids} kg` : '—',
+        tension: dto.tensionSystolique != null ? `${dto.tensionSystolique}/${dto.tensionDiastolique}` : '—',
+        bfc: dto.bfc != null ? `${dto.bfc} bpm` : '—',
+        hu: dto.hauteurUterine != null ? `${dto.hauteurUterine} cm` : '—',
+        proteInurie: dto.proteInurie ?? '—',
+        ag: dto.ageGestationnel != null ? `${dto.ageGestationnel} SA` : '—',
+        estActuel: true,
+      },
+    ];
+
+    // Contexte patiente pour le prompt
+    const patiente = dossier.patiente;
+    const age = patiente?.age ?? null;
+    const ageLibelle = age != null ? `${age} ans` : (patiente?.dateNaissance ? `née le ${patiente.dateNaissance}` : 'inconnu');
+    const contextePatiente = [
+      `- Âge : ${ageLibelle}${age != null && age < 18 ? ' ⚠️ GROSSESSE ADOLESCENTE' : age != null && age > 35 ? ' ⚠️ ÂGE AVANCÉ' : ''}`,
+      dossier.gestite != null ? `- Gestité : ${dossier.gestite}` : '',
+      dossier.parite != null ? `- Parité : ${dossier.parite}` : '',
+      dossier.nombreAvortements ? `- Avortements : ${dossier.nombreAvortements}` : '',
+      dossier.rhesus ? `- Rhésus : ${dossier.rhesus}` : '',
+      dossier.groupeSanguin ? `- Groupe sanguin : ${dossier.groupeSanguin}` : '',
+      dossier.vihStatut ? `- VIH : ${dossier.vihStatut}` : '',
+      dossier.antecedentsMedicaux ? `- Antécédents médicaux : ${dossier.antecedentsMedicaux}` : '',
+      dossier.antecedentsObstetricaux ? `- Antécédents obstétricaux : ${dossier.antecedentsObstetricaux}` : '',
+      dossier.facteursRisque ? `- Facteurs de risque : ${dossier.facteursRisque}` : '',
+    ].filter(Boolean).join('\n');
+
+    // Valeurs du contact actuel
+    const valeurActuelles = [
+      dto.ageGestationnel != null ? `- Âge gestationnel : ${dto.ageGestationnel} SA` : '',
+      dto.poids != null ? `- Poids : ${dto.poids} kg` : '',
+      dto.tensionSystolique != null ? `- Tension : ${dto.tensionSystolique}/${dto.tensionDiastolique} mmHg` : '',
+      dto.temperature != null ? `- Température : ${dto.temperature} °C` : '',
+      dto.bfc != null ? `- BCF (rythme cardiaque fœtal) : ${dto.bfc} bpm` : '',
+      dto.hauteurUterine != null ? `- Hauteur utérine : ${dto.hauteurUterine} cm` : '',
+      dto.mouvementsActifs != null ? `- Mouvements fœtaux : ${dto.mouvementsActifs ? 'présents' : 'absents'}` : '',
+      dto.proteInurie != null ? `- Protéinurie : ${dto.proteInurie}` : '',
+      dto.paleur != null ? `- Pâleur : ${dto.paleur ? 'oui' : 'non'}` : '',
+      dto.oedemes != null ? `- Odèmes : ${dto.oedemes ? 'oui' : 'non'}` : '',
+      dto.perimetreBrachial != null ? `- Périmètre brachial : ${dto.perimetreBrachial} cm` : '',
+      dto.etatGeneral != null ? `- État général : ${dto.etatGeneral}` : '',
+      dto.ecoulementVaginal ? `- Écoulement vaginal : oui` : '',
+      dto.ulcerationsGenitales ? `- Ulcérations génitales : oui` : '',
+    ].filter(Boolean).join('\n');
+
+    // Historique contacts passés
+    const historiqueTexte = contacts.length === 0
+      ? 'Aucun contact antérieur.'
+      : contacts.map((c) =>
+          `CPN${c.numeroContact} (${c.dateContact}) : poids=${c.poids ?? '?'} kg, tension=${c.tensionSystolique ?? '?'}/${c.tensionDiastolique ?? '?'}, BCF=${c.bfc ?? '?'} bpm, HU=${c.hauteurUterine ?? '?'} cm, protéinurie=${c.proteInurie ?? '?'}`,
+        ).join('\n');
+
+    const prompt = `Tu es un assistant clinique dans une maternité à Goma, en RDC.
+Tu aides les infirmières de consultation prénatale (CPN) à repérer les signes de danger.
+
+Règles ABSOLUES :
+- Tu n'es pas le médecin. Tu aides l'infirmière à décider.
+- Ne jamais dire "référer à l'hôpital" : la patiente EST déjà à la maternité.
+- Utilise du français simple, comme si tu parlais à une infirmière de terrain. Pas de jargon médical complexe.
+- Ex : "la tension est trop haute" au lieu de "HTA", "le coeur du bébé bat trop lentement" au lieu de "bradycardie fœtale".
+- L'âge de la patiente EST un critère d'analyse : si elle a moins de 18 ans ou plus de 35 ans, tu dois toujours créer un point d'analyse "age" et hausser la vigilance sur tous les autres signes.
+- Une patiente de moins de 18 ans est une grossesse adolescente à haut risque : surveillance rapprochée obligatoire.
+- Une patiente de plus de 35 ans a un risque accru de complications : sois plus prudent dans tes interprétations.
+
+Contexte de la patiente :
+${contextePatiente}
+
+Historique des consultations précédentes :
+${historiqueTexte}
+
+Valeurs du contact actuel (CPN${contacts.length + 1}) :
+${valeurActuelles}
+
+Tu dois retourner un JSON VALIDE avec exactement cette structure :
+{
+  "niveau": "CRITIQUE" | "URGENT" | "ATTENTION" | "NORMAL",
+  "conclusion": "un message court et direct pour l'infirmière (1-2 phrases)",
+  "suggestionTraitement": "texte prêt à copier dans le champ traitement (2-5 lignes)",
+  "pointsAnalyse": [
+    {
+      "code": "identifiant_court",
+      "label": "Nom du point",
+      "valeurActuelle": "valeur mesurée",
+      "interpretation": "explication en français simple (1-2 phrases)",
+      "statut": "OK" | "ATTENTION" | "URGENT" | "CRITIQUE"
+    }
+  ]
+}
+
+Niveaux :
+- CRITIQUE : appeler le médecin de garde MAINTENANT, ne pas laisser partir la patiente
+- URGENT : le médecin doit voir la patiente avant qu'elle rentre
+- ATTENTION : rapprocher le prochain RDV à 2 semaines
+- NORMAL : suivi normal, prochain RDV dans 4 semaines
+
+Réponds UNIQUEMENT avec le JSON, sans texte avant ni après.`;
+
+    const completion = await this.openai.chat.completions.create({
+      model: 'gpt-4o',
+      response_format: { type: 'json_object' },
+      temperature: 0.2,
+      messages: [
+        { role: 'system', content: 'Tu es un assistant clinique CPN. Tu réponds uniquement en JSON valide.' },
+        { role: 'user', content: prompt },
+      ],
+    });
+
+    const contenu = completion.choices[0]?.message?.content ?? '{}';
+    const resultatIA = JSON.parse(contenu) as {
+      niveau: string;
+      conclusion: string;
+      suggestionTraitement: string;
+      pointsAnalyse: {
+        code: string;
+        label: string;
+        valeurActuelle: string;
+        interpretation: string;
+        statut: string;
+      }[];
+    };
+
+    return {
+      niveau: resultatIA.niveau ?? 'NORMAL',
+      conclusion: resultatIA.conclusion ?? '',
+      suggestionTraitement: resultatIA.suggestionTraitement ?? '',
+      pointsAnalyse: resultatIA.pointsAnalyse ?? [],
+      tableau,
     };
   }
 
