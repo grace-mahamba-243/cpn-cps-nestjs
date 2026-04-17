@@ -54,6 +54,12 @@ export class ExamenCpnEntity {
   @Column({ type: 'text', nullable: true })
   notes: string | null;
 
+  @Column({ name: 'pris_en_charge_le', type: 'datetime', nullable: true })
+  prisEnChargeLe: Date | null;
+
+  @Column({ name: 'envoye_le', type: 'datetime', nullable: true })
+  envoyeLe: Date | null;
+
   @CreateDateColumn({ name: 'cree_le' })
   creeLe: Date;
 

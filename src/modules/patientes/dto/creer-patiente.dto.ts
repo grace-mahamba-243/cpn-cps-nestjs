@@ -67,4 +67,12 @@ export class CreerPatienteDto {
 
   @IsDateString()
   dateEnregistrement: string;
+
+  @IsOptional()
+  @IsString()
+  utilisateurId?: string;
+
+  @IsOptional()
+  @IsString()
+  utilisateurNom?: string;
 }

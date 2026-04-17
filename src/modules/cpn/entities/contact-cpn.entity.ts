@@ -68,6 +68,27 @@ export class ContactCpnEntity {
   @Column({ type: 'boolean', nullable: true })
   varices: boolean | null;
 
+  @Column({ name: 'etat_general', type: 'varchar', length: 20, nullable: true })
+  etatGeneral: string | null; // BON | PASSABLE | CRITIQUE
+
+  @Column({ name: 'perimetre_brachial', type: 'decimal', precision: 4, scale: 1, nullable: true })
+  perimetreBrachial: number | null; // cm
+
+  @Column({ name: 'prote_inurie', type: 'varchar', length: 10, nullable: true })
+  proteInurie: string | null; // NEGATIF | TRACES | 1+ | 2+ | 3+
+
+  @Column({ type: 'boolean', nullable: true })
+  paleur: boolean | null;
+
+  @Column({ name: 'ecoulement_vaginal', type: 'boolean', nullable: true })
+  ecoulementVaginal: boolean | null;
+
+  @Column({ name: 'ulcerations_genitales', type: 'boolean', nullable: true })
+  ulcerationsGenitales: boolean | null;
+
+  @Column({ name: 'etat_du_col', type: 'text', nullable: true })
+  etatDuCol: string | null;
+
   @Column({ type: 'text', nullable: true })
   observations: string | null;
 

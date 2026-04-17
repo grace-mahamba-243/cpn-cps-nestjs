@@ -46,4 +46,11 @@ export class RendezVousController {
   reprogrammer(@Param('id') id: string, @Body() dto: ReprogrammerRendezVousDto) {
     return this.rendezVousService.reprogrammer(id, dto.dateRdv, dto.heureRdv);
   }
+
+  // Annule un RDV programme et cree immediatement une arrivee pour aujourd hui.
+  // Le RDV annule reste en historique.
+  @Post(':id/remplacer-par-arrivee')
+  remplacerParArrivee(@Param('id') id: string) {
+    return this.rendezVousService.remplacerParArrivee(id);
+  }
 }

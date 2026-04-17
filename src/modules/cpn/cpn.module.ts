@@ -6,6 +6,7 @@ import { DossierCpnEntity } from './entities/dossier-cpn.entity';
 import { ContactCpnEntity } from './entities/contact-cpn.entity';
 import { ExamenCpnEntity } from './entities/examen-cpn.entity';
 import { PatienteEntity } from '../patientes/entities/patiente.entity';
+import { JournalModule } from '../journal/journal.module';
 
 // Ce module regroupe les entites et la logique metier du suivi prenatal CPN.
 @Module({
@@ -16,6 +17,7 @@ import { PatienteEntity } from '../patientes/entities/patiente.entity';
       ExamenCpnEntity,
       PatienteEntity,
     ]),
+    JournalModule,
   ],
   controllers: [CpnController],
   providers: [CpnService],
