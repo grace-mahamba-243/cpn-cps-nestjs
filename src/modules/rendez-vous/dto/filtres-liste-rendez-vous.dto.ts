@@ -19,18 +19,18 @@ export class FiltresListeRendezVousDto {
 
   // Filtrer par statut exact
   @IsOptional()
-  @IsIn(['EN_ATTENTE', 'PROGRAMME', 'CONFIRME', 'ARRIVE', 'TERMINE', 'ANNULE', 'REPROGRAMME', 'SURPRISE'])
+  @IsIn(['EN_ATTENTE', 'PROGRAMME', 'CONFIRME', 'ARRIVE', 'TERMINE', 'ANNULE', 'REPROGRAMME'])
   statut?: string;
-
-  // Filtrer par type de rendez-vous
-  @IsOptional()
-  @IsIn(['PROGRAMME', 'SURPRISE'])
-  typeRdv?: string;
 
   // Filtrer par service de destination
   @IsOptional()
   @IsString()
   serviceDestination?: string;
+
+  // Filtrer par reference de dossier (permet de recuperer l historique d un patient)
+  @IsOptional()
+  @IsString()
+  refDossier?: string;
 
   // Recherche libre sur le nom du patient ou la reference du dossier
   @IsOptional()

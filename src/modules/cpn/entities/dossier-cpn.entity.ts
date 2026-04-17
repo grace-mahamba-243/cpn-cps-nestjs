@@ -82,6 +82,12 @@ export class DossierCpnEntity {
   @Column({ type: 'text', nullable: true })
   notes: string | null;
 
+  @Column({ name: 'facteurs_risque', type: 'text', nullable: true })
+  facteursRisque: string | null;
+
+  @Column({ type: 'decimal', precision: 5, scale: 1, nullable: true })
+  taille: number | null;
+
   @OneToMany(() => ContactCpnEntity, (contact) => contact.dossierCpn)
   contacts: ContactCpnEntity[];
 
