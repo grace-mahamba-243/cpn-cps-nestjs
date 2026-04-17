@@ -4,6 +4,7 @@ import { CreerDossierCpnDto } from './dto/creer-dossier-cpn.dto';
 import { ModifierDossierCpnDto } from './dto/modifier-dossier-cpn.dto';
 import { CreerContactCpnDto } from './dto/creer-contact-cpn.dto';
 import { ModifierContactCpnDto } from './dto/modifier-contact-cpn.dto';
+import { AnalyserContactCpnDto } from './dto/analyser-contact-cpn.dto';
 import { CreerExamenCpnDto } from './dto/creer-examen-cpn.dto';
 import { ModifierExamenCpnDto } from './dto/modifier-examen-cpn.dto';
 
@@ -35,6 +36,11 @@ export class CpnController {
   }
 
   // --- Contacts CPN ---
+
+  @Post(':dossierId/contacts/analyser')
+  analyserContact(@Param('dossierId') dossierId: string, @Body() dto: AnalyserContactCpnDto) {
+    return this.cpnService.analyserContact(dossierId, dto);
+  }
 
   @Post(':dossierId/contacts')
   ajouterContact(@Param('dossierId') dossierId: string, @Body() dto: CreerContactCpnDto) {
@@ -74,5 +80,15 @@ export class CpnController {
     @Body() dto: ModifierExamenCpnDto,
   ) {
     return this.cpnService.enregistrerResultatExamen(dossierId, examenId, dto);
+  }
+
+  // Saisie de l'interprétation d'une échographie (quand la patiente revient avec ses images)
+  @Patch(':dossierId/examens/:examenId/interpretation')
+  entrerInterpretationEchographie(
+    @Param('dossierId') dossierId: string,
+    @Param('examenId') examenId: string,
+    @Body() dto: { interpretation: string },
+  ) {
+    return this.cpnService.entrerInterpretationEchographie(dossierId, examenId, dto);
   }
 }

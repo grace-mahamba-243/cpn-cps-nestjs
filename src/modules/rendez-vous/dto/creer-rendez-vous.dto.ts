@@ -17,12 +17,13 @@ export class CreerRendezVousDto {
 
   // Statut initial du rendez-vous
   @IsOptional()
-  @IsIn(['EN_ATTENTE', 'PROGRAMME', 'CONFIRME', 'ARRIVE', 'SURPRISE'])
+  @IsIn(['EN_ATTENTE', 'PROGRAMME', 'CONFIRME', 'ARRIVE'])
   statut?: string;
 
-  // Type du rendez-vous : planifie ou non planifie (surprise)
-  @IsIn(['PROGRAMME', 'SURPRISE'])
-  typeRdv: string;
+  // Type du rendez-vous (toujours PROGRAMME desormais)
+  @IsOptional()
+  @IsIn(['PROGRAMME'])
+  typeRdv?: string;
 
   // Nom complet du patient concerné
   @IsString()
