@@ -21,6 +21,24 @@ export class UtilisateurAuthEntity {
   @Column({ name: 'nom_affichage', type: 'varchar', length: 200 })
   nomAffichage!: string;
 
+  @Column({ type: 'varchar', length: 1, nullable: true })
+  sexe!: string | null;
+
+  @Column({ name: 'date_naissance', type: 'date', nullable: true })
+  dateNaissance!: string | null;
+
+  @Column({ type: 'varchar', length: 30, nullable: true })
+  telephone!: string | null;
+
+  @Column({ type: 'varchar', length: 180, nullable: true })
+  email!: string | null;
+
+  @Column({ type: 'varchar', length: 255, nullable: true })
+  adresse!: string | null;
+
+  @Column({ type: 'varchar', length: 150, nullable: true })
+  unite!: string | null;
+
   @Column({ name: 'mot_de_passe_hash', type: 'varchar', length: 255 })
   motDePasseHash!: string;
 

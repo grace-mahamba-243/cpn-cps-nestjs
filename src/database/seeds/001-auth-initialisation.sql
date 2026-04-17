@@ -48,9 +48,7 @@ CREATE TABLE IF NOT EXISTS sessions_authentification (
 
 INSERT INTO roles (id, code, libelle)
 VALUES
-  ('11111111-1111-1111-1111-111111111111', 'ADMIN', 'Administrateur'),
-  ('22222222-2222-2222-2222-222222222222', 'SUPERVISEUR', 'Superviseur'),
-  ('33333333-3333-3333-3333-333333333333', 'AGENT_CLINIQUE', 'Agent clinique')
+  ('11111111-1111-1111-1111-111111111111', 'ADMIN', 'Administrateur')
 ON DUPLICATE KEY UPDATE
   libelle = VALUES(libelle);
 
@@ -75,20 +73,11 @@ VALUES
   ),
   (
     'bbbbbbbb-bbbb-bbbb-bbbb-bbbbbbbbbbbb',
-    'superviseur',
-    'Superviseur Clinique',
-    'super1234',
+    'admin2',
+    'Administrateur Secondaire',
+    'admin1234',
     1,
-    '22222222-2222-2222-2222-222222222222',
-    NULL
-  ),
-  (
-    'cccccccc-cccc-cccc-cccc-cccccccccccc',
-    'agent',
-    'Agent Clinique',
-    'agent1234',
-    1,
-    '33333333-3333-3333-3333-333333333333',
+    '11111111-1111-1111-1111-111111111111',
     NULL
   )
 ON DUPLICATE KEY UPDATE
