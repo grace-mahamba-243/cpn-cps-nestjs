@@ -85,6 +85,16 @@ export class DossierCpnEntity {
   @Column({ name: 'facteurs_risque', type: 'text', nullable: true })
   facteursRisque: string | null;
 
+  // --- Clôture ---
+  @Column({ name: 'notes_cloture', type: 'text', nullable: true })
+  notesCloture: string | null;
+
+  @Column({ name: 'clos_par', type: 'varchar', length: 150, nullable: true })
+  closPar: string | null;
+
+  @Column({ name: 'date_cloture', type: 'date', nullable: true })
+  dateCloture: string | null;
+
   @Column({ type: 'decimal', precision: 5, scale: 1, nullable: true })
   taille: number | null;
 
