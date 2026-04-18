@@ -34,8 +34,17 @@ export class CpnService {
 
   // --- Dossiers CPN ---
 
-  async listerDossiers(recherche?: string) {
+  async listerDossiers(recherche?: string, patienteId?: string) {
     let dossiers: DossierCpnEntity[];
+
+    if (patienteId) {
+      dossiers = await this.dossiersRepo.find({
+        where: { patienteId },
+        relations: ['patiente', 'contacts'],
+        order: { creeLe: 'DESC' },
+      });
+      return { dossiers: dossiers.map((d) => this.formaterDossierResume(d)) };
+    }
 
     if (recherche && recherche.trim()) {
       const terme = recherche.trim();
@@ -69,6 +78,20 @@ export class CpnService {
       });
     }
 
+    // Pour la liste principale : ne garder qu'un dossier par patiente
+    // (le dossier OUVERT s'il existe, sinon le plus récent)
+    const parPatiente = new Map<string, DossierCpnEntity>();
+    for (const d of dossiers) {
+      const existant = parPatiente.get(d.patienteId);
+      if (!existant) {
+        parPatiente.set(d.patienteId, d);
+      } else if (d.statut === 'OUVERT' && existant.statut !== 'OUVERT') {
+        // Préférer le dossier OUVERT
+        parPatiente.set(d.patienteId, d);
+      }
+    }
+    dossiers = Array.from(parPatiente.values());
+
     return { dossiers: dossiers.map((d) => this.formaterDossierResume(d)) };
   }
 
@@ -97,6 +120,17 @@ export class CpnService {
 
     if (!patiente) {
       throw new NotFoundException('Patiente introuvable.');
+    }
+
+    // Vérifier qu'il n'existe pas déjà un dossier OUVERT pour cette patiente
+    const dossierActif = await this.dossiersRepo.findOne({
+      where: { patienteId: dto.patienteId, statut: 'OUVERT' },
+    });
+    if (dossierActif) {
+      throw new ConflictException({
+        message: 'Cette patiente possède déjà un dossier CPN ouvert.',
+        dossierId: dossierActif.id,
+      });
     }
 
     const numeroDossierCpn = await this.genererNumeroDossierCpn();
@@ -191,6 +225,15 @@ export class CpnService {
           ? (dto.facteursRisque ? JSON.stringify(dto.facteursRisque) : null)
           : dossier.facteursRisque,
       taille: typeof dto.taille !== 'undefined' ? dto.taille : dossier.taille,
+      // Champs de clôture
+      notesCloture: typeof dto.notesCloture !== 'undefined' ? dto.notesCloture : dossier.notesCloture,
+      closPar: typeof dto.closPar !== 'undefined' ? dto.closPar : dossier.closPar,
+      dateCloture:
+        dto.statut === 'CLOS' && dossier.statut !== 'CLOS'
+          ? new Date().toISOString().split('T')[0]
+          : dto.statut === 'OUVERT'
+            ? null
+            : dossier.dateCloture,
     });
 
     const enregistre = await this.dossiersRepo.save(dossier);
@@ -496,6 +539,9 @@ export class CpnService {
       gestite: dossier.gestite,
       parite: dossier.parite,
       creeLe: dossier.creeLe,
+      notesCloture: dossier.notesCloture,
+      closPar: dossier.closPar,
+      dateCloture: dossier.dateCloture,
     };
   }
 
@@ -515,6 +561,9 @@ export class CpnService {
       notes: dossier.notes,
       facteursRisque: dossier.facteursRisque ? JSON.parse(dossier.facteursRisque) : [],
       taille: dossier.taille,
+      notesCloture: dossier.notesCloture,
+      closPar: dossier.closPar,
+      dateCloture: dossier.dateCloture,
       patiente: p
         ? {
             id: p.id,
