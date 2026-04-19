@@ -6,6 +6,7 @@ import { DossierCpnEntity } from './entities/dossier-cpn.entity';
 import { ContactCpnEntity } from './entities/contact-cpn.entity';
 import { ExamenCpnEntity } from './entities/examen-cpn.entity';
 import { PatienteEntity } from '../patientes/entities/patiente.entity';
+import { AccouchementEntity } from '../accouchements/entities/accouchement.entity';
 import { CreerDossierCpnDto } from './dto/creer-dossier-cpn.dto';
 import { ModifierDossierCpnDto } from './dto/modifier-dossier-cpn.dto';
 import { CreerContactCpnDto } from './dto/creer-contact-cpn.dto';
@@ -29,17 +30,21 @@ export class CpnService {
     private readonly examensRepo: Repository<ExamenCpnEntity>,
     @InjectRepository(PatienteEntity)
     private readonly patientesRepo: Repository<PatienteEntity>,
+    @InjectRepository(AccouchementEntity)
+    private readonly accouchementsRepo: Repository<AccouchementEntity>,
     private readonly journalService: JournalService,
   ) {}
 
   // --- Dossiers CPN ---
 
-  async listerDossiers(recherche?: string, patienteId?: string) {
+  async listerDossiers(recherche?: string, patienteId?: string, statut?: string) {
     let dossiers: DossierCpnEntity[];
 
     if (patienteId) {
+      const where: any = { patienteId };
+      if (statut) where.statut = statut;
       dossiers = await this.dossiersRepo.find({
-        where: { patienteId },
+        where,
         relations: ['patiente', 'contacts'],
         order: { creeLe: 'DESC' },
       });
@@ -48,6 +53,19 @@ export class CpnService {
 
     if (recherche && recherche.trim()) {
       const terme = recherche.trim();
+
+      // Recherche directe par numéro de dossier CPN (ex: CPN-2026-0001), tous statuts inclus
+      if (/^CPN-/i.test(terme) || /^\d{4}/.test(terme)) {
+        const dossiersDirects = await this.dossiersRepo.find({
+          where: { numeroDossierCpn: Like(`%${terme}%`) },
+          relations: ['patiente', 'contacts'],
+          order: { creeLe: 'DESC' },
+        });
+        if (dossiersDirects.length > 0) {
+          return { dossiers: dossiersDirects.map((d) => this.formaterDossierResume(d)) };
+        }
+      }
+
       const patientes = await this.patientesRepo.find({
         where: [
           { nom: Like(`%${terme}%`) },
@@ -185,6 +203,16 @@ export class CpnService {
 
     if (!dossier) {
       throw new NotFoundException(`Dossier CPN #${id} introuvable.`);
+    }
+
+    // Bloquer la réouverture d'un dossier CPN déjà lié à un accouchement
+    if (dto.statut === 'OUVERT' && dossier.statut === 'CLOS') {
+      const accLie = await this.accouchementsRepo.findOne({ where: { dossierCpnId: id } });
+      if (accLie) {
+        throw new ConflictException(
+          `Ce dossier CPN est lié à l'accouchement ${accLie.numeroAccouchement ?? accLie.id} et ne peut pas être rouvert.`,
+        );
+      }
     }
 
     Object.assign(dossier, {
@@ -538,6 +566,9 @@ export class CpnService {
       dateProbableAccouchement: dossier.dateProbableAccouchement,
       gestite: dossier.gestite,
       parite: dossier.parite,
+      groupeSanguin: dossier.groupeSanguin,
+      rhesus: dossier.rhesus,
+      vihStatut: dossier.vihStatut,
       creeLe: dossier.creeLe,
       notesCloture: dossier.notesCloture,
       closPar: dossier.closPar,

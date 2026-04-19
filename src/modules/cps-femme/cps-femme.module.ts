@@ -9,6 +9,7 @@ import { DossierCpnEntity } from '../cpn/entities/dossier-cpn.entity';
 import { ContactCpnEntity } from '../cpn/entities/contact-cpn.entity';
 import { ExamenCpnEntity } from '../cpn/entities/examen-cpn.entity';
 import { EnfantEntity } from '../enfants/entities/enfant.entity';
+import { ExamenCpsFemmeEntity } from './entities/examen-cps-femme.entity';
 import { JournalModule } from '../journal/journal.module';
 
 // Ce module regroupe les entites et la logique metier du suivi postnatal CPS Femme.
@@ -22,6 +23,7 @@ import { JournalModule } from '../journal/journal.module';
       ContactCpnEntity,
       ExamenCpnEntity,
       EnfantEntity,
+      ExamenCpsFemmeEntity,
     ]),
     JournalModule,
   ],

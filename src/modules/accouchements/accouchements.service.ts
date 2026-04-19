@@ -1,8 +1,9 @@
-import { Injectable, NotFoundException } from '@nestjs/common';
+import { BadRequestException, ConflictException, Injectable, NotFoundException } from '@nestjs/common';
 import { InjectRepository } from '@nestjs/typeorm';
 import { Like, Repository } from 'typeorm';
 import { AccouchementEntity } from './entities/accouchement.entity';
 import { PatienteEntity } from '../patientes/entities/patiente.entity';
+import { DossierCpnEntity } from '../cpn/entities/dossier-cpn.entity';
 import { CreerAccouchementDto } from './dto/creer-accouchement.dto';
 
 // Ce service centralise toute la logique metier du module accouchements.
@@ -13,6 +14,8 @@ export class AccouchementsService {
     private readonly accouchementsRepo: Repository<AccouchementEntity>,
     @InjectRepository(PatienteEntity)
     private readonly patientesRepo: Repository<PatienteEntity>,
+    @InjectRepository(DossierCpnEntity)
+    private readonly dossiersCpnRepo: Repository<DossierCpnEntity>,
   ) {}
 
   // --- Recherche de patientes ---
@@ -94,6 +97,48 @@ export class AccouchementsService {
     const patiente = await this.patientesRepo.findOne({ where: { id: dto.patienteId } });
     if (!patiente) throw new NotFoundException('Patiente introuvable.');
 
+    // Contrainte 1 : un dossier CPN ne peut être lié qu à un seul accouchement
+    if (dto.dossierCpnId) {
+      const dejaLie = await this.accouchementsRepo.findOne({
+        where: { dossierCpnId: dto.dossierCpnId },
+      });
+      if (dejaLie) {
+        throw new ConflictException(
+          `Le dossier CPN est déjà lié à l'accouchement ${dejaLie.numeroAccouchement}. Un dossier CPN ne peut avoir qu'un seul accouchement.`,
+        );
+      }
+    }
+
+    // Contrainte 2 : un accouchement EN_COURS ne peut pas coexister avec un autre pour la même patiente
+    const enCours = await this.accouchementsRepo.findOne({
+      where: { patienteId: dto.patienteId, statut: 'EN_COURS' },
+    });
+    if (enCours) {
+      throw new ConflictException(
+        `Cette patiente a déjà un accouchement en cours (${enCours.numeroAccouchement}). Clôturez-le avant d'en créer un nouveau.`,
+      );
+    }
+
+    // Contrainte 3 : délai minimal de 6 mois entre deux accouchements
+    const dateNouvel = new Date(dto.dateAccouchement);
+    const sixMoisAvant = new Date(dateNouvel);
+    sixMoisAvant.setMonth(sixMoisAvant.getMonth() - 6);
+
+    const accRecent = await this.accouchementsRepo
+      .createQueryBuilder('a')
+      .where('a.patiente_id = :pid', { pid: dto.patienteId })
+      .andWhere('a.date_accouchement >= :limite', { limite: sixMoisAvant.toISOString().slice(0, 10) })
+      .andWhere('a.date_accouchement <= :date', { date: dateNouvel.toISOString().slice(0, 10) })
+      .orderBy('a.date_accouchement', 'DESC')
+      .getOne();
+
+    if (accRecent) {
+      const dateRecente = new Date(accRecent.dateAccouchement).toLocaleDateString('fr-FR');
+      throw new BadRequestException(
+        `Un accouchement a déjà été enregistré le ${dateRecente} pour cette patiente (${accRecent.numeroAccouchement}). Un délai minimum de 6 mois est requis entre deux accouchements.`,
+      );
+    }
+
     const numeroAccouchement = await this.genererNumero();
 
     const acc = this.accouchementsRepo.create({
@@ -119,6 +164,23 @@ export class AccouchementsService {
     });
 
     const sauvegarde = await this.accouchementsRepo.save(acc);
+
+    // Clôture automatique du dossier CPN lié (explicite ou dernier ouvert de la patiente)
+    const dossierCpnAFermer = dto.dossierCpnId
+      ? await this.dossiersCpnRepo.findOne({ where: { id: dto.dossierCpnId } })
+      : await this.dossiersCpnRepo.findOne({ where: { patienteId: dto.patienteId, statut: 'OUVERT' }, order: { creeLe: 'DESC' } });
+
+    if (dossierCpnAFermer && dossierCpnAFermer.statut === 'OUVERT') {
+      dossierCpnAFermer.statut = 'CLOS';
+      dossierCpnAFermer.dateCloture = new Date().toISOString().slice(0, 10);
+      dossierCpnAFermer.notesCloture = `Clôturé automatiquement suite à l'enregistrement de l'accouchement ${sauvegarde.numeroAccouchement}.`;
+      await this.dossiersCpnRepo.save(dossierCpnAFermer);
+      // Mettre à jour le lien si non fourni explicitement
+      if (!dto.dossierCpnId) {
+        await this.accouchementsRepo.update(sauvegarde.id, { dossierCpnId: dossierCpnAFermer.id });
+      }
+    }
+
     const complet = await this.accouchementsRepo.findOne({
       where: { id: sauvegarde.id },
       relations: ['patiente'],

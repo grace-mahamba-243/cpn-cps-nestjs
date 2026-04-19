@@ -15,6 +15,9 @@ import { DossierCpnEntity } from '../cpn/entities/dossier-cpn.entity';
 import { ContactCpnEntity } from '../cpn/entities/contact-cpn.entity';
 import { ExamenCpnEntity } from '../cpn/entities/examen-cpn.entity';
 import { EnfantEntity } from '../enfants/entities/enfant.entity';
+import { ExamenCpsFemmeEntity } from './entities/examen-cps-femme.entity';
+import { CreerExamenCpsFemmeDto } from './dto/creer-examen-cps-femme.dto';
+import { ModifierExamenCpsFemmeDto } from './dto/modifier-examen-cps-femme.dto';
 import { CreerDossierCpsDto } from './dto/creer-dossier-cps.dto';
 import { ModifierDossierCpsDto } from './dto/modifier-dossier-cps.dto';
 import { CreerVisiteCpsDto } from './dto/creer-visite-cps.dto';
@@ -40,6 +43,8 @@ export class CpsFemmeService {
     private readonly examensCpnRepo: Repository<ExamenCpnEntity>,
     @InjectRepository(EnfantEntity)
     private readonly enfantsRepo: Repository<EnfantEntity>,
+    @InjectRepository(ExamenCpsFemmeEntity)
+    private readonly examensCpsFemmeRepo: Repository<ExamenCpsFemmeEntity>,
     private readonly journalService: JournalService,
   ) {}
 
@@ -632,16 +637,15 @@ export class CpsFemmeService {
       prenom: dto.prenom ?? '',
       sexe: dto.sexe,
       dateNaissance: dto.dateNaissance,
-      // Le lien vers la mère : nom complet depuis la patiente
       nomMere: [dossier.patiente?.nom, dossier.patiente?.postnom, dossier.patiente?.prenom]
         .filter(Boolean)
         .join(' '),
       telephone: dossier.patiente?.telephone ?? '',
       adresse: dossier.patiente?.adresse ?? '',
-      // Numero de fiche généré si absent
-      numeroFiche:
+      numeroDossier:
         dto.numeroFiche ??
         `ENF-${Date.now().toString(36).toUpperCase()}-${dto.nom.substring(0, 3).toUpperCase()}`,
+      patienteId: dossier.patienteId ?? null,
       dateEnregistrement: new Date().toISOString().split('T')[0],
     });
 
@@ -682,36 +686,61 @@ export class CpsFemmeService {
     };
   }
 
-  // --- Examens CPS (depuis le dossier CPN associé) ---
+  // --- Examens biologiques / échographies du dossier CPS Femme ---
 
   async listerExamensCps(dossierId: string) {
-    const dossier = await this.dossiersRepo.findOne({
-      where: { id: dossierId },
-      relations: ['visites'],
-    });
+    const dossier = await this.dossiersRepo.findOne({ where: { id: dossierId } });
     if (!dossier) throw new NotFoundException(`Dossier CPS #${dossierId} introuvable.`);
-    const visites = (dossier.visites ?? []).sort((a, b) => a.numeroVisite - b.numeroVisite);
+    const examens = await this.examensCpsFemmeRepo.find({
+      where: { dossierId },
+      order: { creeLe: 'DESC' },
+    });
+    return examens.map((e) => this.formaterExamen(e));
+  }
+
+  async demanderExamen(dossierId: string, dto: CreerExamenCpsFemmeDto) {
+    const dossier = await this.dossiersRepo.findOne({ where: { id: dossierId } });
+    if (!dossier) throw new NotFoundException(`Dossier CPS #${dossierId} introuvable.`);
+    const examen = this.examensCpsFemmeRepo.create({
+      dossierId,
+      typeExamen: dto.typeExamen,
+      libelle: dto.libelle,
+      source: dto.source ?? 'INTERNE',
+      dateExamen: dto.dateExamen ?? null,
+      notes: dto.notes ?? null,
+      statut: 'DEMANDE',
+    });
+    await this.examensCpsFemmeRepo.save(examen);
+    return this.formaterExamen(examen);
+  }
+
+  async enregistrerResultatExamen(dossierId: string, examenId: string, dto: ModifierExamenCpsFemmeDto) {
+    const examen = await this.examensCpsFemmeRepo.findOne({ where: { id: examenId, dossierId } });
+    if (!examen) throw new NotFoundException(`Examen #${examenId} introuvable.`);
+    if (dto.resultat !== undefined) examen.resultat = dto.resultat;
+    if (dto.interpretation !== undefined) examen.resultat = dto.interpretation;
+    if (dto.statut !== undefined) examen.statut = dto.statut;
+    if (dto.dateResultat !== undefined) examen.dateResultat = dto.dateResultat;
+    if (dto.notes !== undefined) examen.notes = dto.notes;
+    await this.examensCpsFemmeRepo.save(examen);
+    return this.formaterExamen(examen);
+  }
+
+  private formaterExamen(e: ExamenCpsFemmeEntity) {
     return {
-      examens: visites.map((v) => ({
-        id: v.id,
-        typeVisite: v.typeVisite,
-        numeroVisite: v.numeroVisite,
-        dateVisite: v.dateVisite,
-        etatGeneral: v.etatGeneral,
-        involutionUterine: v.involutionUterine,
-        etatSeins: v.etatSeins,
-        allaitement: v.allaitement,
-        etatPlaie: v.etatPlaie,
-        saignements: v.saignements,
-        lochies: v.lochies,
-        etatPsychologique: v.etatPsychologique,
-        oedemes: v.oedemes,
-        paleur: v.paleur,
-        poids: v.poids,
-        temperature: v.temperature,
-        tensionSystolique: v.tensionSystolique,
-        tensionDiastolique: v.tensionDiastolique,
-      })),
+      id: e.id,
+      dossierId: e.dossierId,
+      typeExamen: e.typeExamen,
+      libelle: e.libelle,
+      statut: e.statut,
+      source: e.source,
+      resultat: e.resultat,
+      dateExamen: e.dateExamen,
+      dateResultat: e.dateResultat,
+      notes: e.notes,
+      prisEnChargeLe: e.prisEnChargeLe,
+      envoyeLe: e.envoyeLe,
+      creeLe: e.creeLe,
     };
   }
 

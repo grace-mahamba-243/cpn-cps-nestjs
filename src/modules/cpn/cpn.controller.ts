@@ -16,8 +16,8 @@ export class CpnController {
   // --- Dossiers CPN ---
 
   @Get()
-  listerDossiers(@Query('recherche') recherche?: string, @Query('patienteId') patienteId?: string) {
-    return this.cpnService.listerDossiers(recherche, patienteId);
+  listerDossiers(@Query('recherche') recherche?: string, @Query('patienteId') patienteId?: string, @Query('statut') statut?: string) {
+    return this.cpnService.listerDossiers(recherche, patienteId, statut);
   }
 
   @Post()

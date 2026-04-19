@@ -7,6 +7,7 @@ import databaseConfig from './config/database.config';
 import { AccouchementsModule } from './modules/accouchements/accouchements.module';
 import { AuthModule } from './modules/auth/auth.module';
 import { CpnModule } from './modules/cpn/cpn.module';
+import { CpsEnfantModule } from './modules/cps-enfant/cps-enfant.module';
 import { CpsFemmeModule } from './modules/cps-femme/cps-femme.module';
 import { DashboardModule } from './modules/dashboard/dashboard.module';
 import { DossiersModule } from './modules/dossiers/dossiers.module';
@@ -14,6 +15,7 @@ import { EnfantsModule } from './modules/enfants/enfants.module';
 import { GrossessesModule } from './modules/grossesses/grossesses.module';
 import { ImpressionsModule } from './modules/impressions/impressions.module';
 import { LaboratoireModule } from './modules/laboratoire/laboratoire.module';
+import { NutritionModule } from './modules/nutrition/nutrition.module';
 import { PatientesModule } from './modules/patientes/patientes.module';
 import { PharmacieModule } from './modules/pharmacie/pharmacie.module';
 import { RendezVousModule } from './modules/rendez-vous/rendez-vous.module';
@@ -54,8 +56,10 @@ import { VaccinationModule } from './modules/vaccination/vaccination.module';
     CpnModule,
     AccouchementsModule,
     CpsFemmeModule,
+    CpsEnfantModule,
     EnfantsModule,
     SuiviEnfantModule,
+    NutritionModule,
     VaccinationModule,
     RendezVousModule,
     DossiersModule,
