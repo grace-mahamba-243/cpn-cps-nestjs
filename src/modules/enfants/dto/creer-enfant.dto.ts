@@ -1,11 +1,21 @@
-import { IsDateString, IsIn, IsInt, IsOptional, IsString, Length, Min } from 'class-validator';
+﻿import {
+  IsDateString,
+  IsIn,
+  IsInt,
+  IsOptional,
+  IsString,
+  IsUUID,
+  Length,
+  Min,
+} from 'class-validator';
 
-// DTO de creation d un dossier administratif enfant.
+// DTO de creation d un dossier enfant complet (identite + naissance + administratif).
 export class CreerEnfantDto {
   @IsString()
   @Length(1, 30)
-  numeroFiche: string;
+  numeroDossier: string;
 
+  // --- Identite ---
   @IsString()
   @Length(1, 100)
   nom: string;
@@ -25,23 +35,82 @@ export class CreerEnfantDto {
   @IsDateString()
   dateNaissance: string;
 
+  // --- Lien mere (optionnel) ---
+  @IsOptional()
+  @IsUUID()
+  patienteId?: string;
+
+  // --- Informations de naissance ---
+  @IsOptional()
+  @IsIn(['INTERNE', 'EXTERNE'])
+  lieuNaissance?: string;
+
+  @IsOptional()
+  @IsInt()
+  @Min(0)
+  poidsNaissanceG?: number;
+
+  @IsOptional()
+  @IsInt()
+  @Min(0)
+  scoreApgar1min?: number;
+
+  @IsOptional()
+  @IsInt()
+  @Min(0)
+  scoreApgar5min?: number;
+
+  @IsOptional()
+  @IsIn(['VIVANT', 'MORT_NE', 'DECES_PRECOCE'])
+  etatNaissance?: string;
+
+  @IsOptional()
+  @IsInt()
+  @Min(22)
+  ageGestationnelSemaines?: number;
+
+  // --- Administratif ---
+  @IsOptional()
   @IsString()
   @Length(1, 100)
-  nomMere: string;
+  nomMere?: string;
 
   @IsOptional()
   @IsString()
   @Length(1, 100)
   nomPere?: string;
 
+  @IsOptional()
   @IsString()
   @Length(1, 30)
-  telephone: string;
+  telephone?: string;
 
+  @IsOptional()
   @IsString()
   @Length(1, 200)
-  adresse: string;
+  adresse?: string;
 
   @IsDateString()
   dateEnregistrement: string;
+
+  @IsOptional()
+  @IsUUID()
+  mereId?: string;
+
+  @IsOptional()
+  @IsUUID()
+  accouchementId?: string;
+
+  @IsOptional()
+  @IsInt()
+  @Min(0)
+  indexNouveauNe?: number;
+
+  @IsOptional()
+  @IsString()
+  utilisateurId?: string;
+
+  @IsOptional()
+  @IsString()
+  utilisateurNom?: string;
 }

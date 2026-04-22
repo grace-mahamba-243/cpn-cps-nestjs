@@ -24,6 +24,14 @@ export class RolesService {
 
   async findAll() {
     const roles = await this.rolesRepository.find({
+      where: [
+        { code: 'ADMIN' },
+        { code: 'MEDECIN' },
+        { code: 'SAGE_FEMME' },
+        { code: 'INFIRMIERE' },
+        { code: 'LABORANTIN' },
+        { code: 'RECEPTION' },
+      ],
       order: {
         libelle: 'ASC',
       },

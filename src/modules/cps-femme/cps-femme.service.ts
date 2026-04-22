@@ -5,7 +5,7 @@ import {
   NotFoundException,
 } from '@nestjs/common';
 import { InjectRepository } from '@nestjs/typeorm';
-import { Like, Repository } from 'typeorm';
+import { Like, Repository, Not, In } from 'typeorm';
 import OpenAI from 'openai';
 import { AnalyserVisiteCpsDto } from './dto/analyser-visite-cps.dto';
 import { DossierCpsFemmeEntity } from './entities/dossier-cps-femme.entity';
@@ -15,11 +15,15 @@ import { DossierCpnEntity } from '../cpn/entities/dossier-cpn.entity';
 import { ContactCpnEntity } from '../cpn/entities/contact-cpn.entity';
 import { ExamenCpnEntity } from '../cpn/entities/examen-cpn.entity';
 import { EnfantEntity } from '../enfants/entities/enfant.entity';
+import { ExamenCpsFemmeEntity } from './entities/examen-cps-femme.entity';
+import { CreerExamenCpsFemmeDto } from './dto/creer-examen-cps-femme.dto';
+import { ModifierExamenCpsFemmeDto } from './dto/modifier-examen-cps-femme.dto';
 import { CreerDossierCpsDto } from './dto/creer-dossier-cps.dto';
 import { ModifierDossierCpsDto } from './dto/modifier-dossier-cps.dto';
 import { CreerVisiteCpsDto } from './dto/creer-visite-cps.dto';
 import { ModifierVisiteCpsDto } from './dto/modifier-visite-cps.dto';
 import { JournalService } from '../journal/journal.service';
+import { RendezVousEntity } from '../rendez-vous/entities/rendez-vous.entity';
 
 // Ce service centralise toute la logique metier du module CPS Femme (suivi postnatal).
 @Injectable()
@@ -40,6 +44,10 @@ export class CpsFemmeService {
     private readonly examensCpnRepo: Repository<ExamenCpnEntity>,
     @InjectRepository(EnfantEntity)
     private readonly enfantsRepo: Repository<EnfantEntity>,
+    @InjectRepository(ExamenCpsFemmeEntity)
+    private readonly examensCpsFemmeRepo: Repository<ExamenCpsFemmeEntity>,
+    @InjectRepository(RendezVousEntity)
+    private readonly rdvRepo: Repository<RendezVousEntity>,
     private readonly journalService: JournalService,
   ) {}
 
@@ -274,6 +282,7 @@ export class CpsFemmeService {
       vihStatut: dto.vihStatut ?? 'INCONNU',
       notes: dto.notes ?? null,
       statut: 'OUVERT',
+      enregistrePar: dto.utilisateurNom ?? null,
     });
 
     const enregistre = await this.dossiersRepo.save(dossier);
@@ -321,6 +330,7 @@ export class CpsFemmeService {
       rhesus: typeof dto.rhesus !== 'undefined' ? dto.rhesus : dossier.rhesus,
       vihStatut: dto.vihStatut ?? dossier.vihStatut,
       notes: typeof dto.notes !== 'undefined' ? dto.notes : dossier.notes,
+      modifiePar: dto.utilisateurNom ?? null,
     });
 
     const enregistre = await this.dossiersRepo.save(dossier);
@@ -359,6 +369,7 @@ export class CpsFemmeService {
     dossier.dateCloture = new Date().toISOString().split('T')[0];
     dossier.closPar = dto.closPar;
     dossier.notesCloture = dto.notesCloture ?? null;
+    dossier.modifiePar = dto.utilisateurNom ?? null;
 
     await this.dossiersRepo.save(dossier);
 
@@ -373,6 +384,24 @@ export class CpsFemmeService {
     });
 
     return { message: 'Dossier CPS cloture avec succes.' };
+  }
+
+  async supprimerDossier(id: string) {
+    const dossier = await this.dossiersRepo.findOne({ where: { id } });
+    if (!dossier) throw new NotFoundException(`Dossier CPS Femme #${id} introuvable.`);
+
+    const nbVisites = await this.visitesRepo.count({ where: { dossierCpsId: id } });
+    if (nbVisites > 0) {
+      throw new BadRequestException('Ce dossier CPS Femme contient des visites et ne peut pas être supprimé.');
+    }
+
+    const nbExamens = await this.examensCpsFemmeRepo.count({ where: { dossierId: id } });
+    if (nbExamens > 0) {
+      throw new BadRequestException('Ce dossier CPS Femme contient des examens et ne peut pas être supprimé.');
+    }
+
+    await this.dossiersRepo.remove(dossier);
+    return { message: 'Dossier CPS Femme supprimé avec succès.' };
   }
 
   // --- Visites CPS ---
@@ -440,6 +469,7 @@ export class CpsFemmeService {
       traitementPrescrit: dto.traitementPrescrit ?? null,
       prochainRdvDate: dto.prochainRdvDate ?? null,
       observations: dto.observations ?? null,
+      enregistrePar: dto.utilisateurNom ?? null,
     });
 
     const enregistree = await this.visitesRepo.save(visite);
@@ -453,6 +483,38 @@ export class CpsFemmeService {
       ressourceId: enregistree.id,
       description: `Ajout de la visite ${enregistree.typeVisite} (n°${enregistree.numeroVisite}) pour le dossier ${dossierId}`,
     });
+
+    // Créer automatiquement un rendez-vous EN_ATTENTE si une date de prochain RDV est définie
+    if (dto.prochainRdvDate) {
+      try {
+        const existant = await this.rdvRepo.findOne({
+          where: { refDossier: dossier.numeroDossierCps, dateRdv: dto.prochainRdvDate, statut: Not(In(['ANNULE', 'TERMINE'])) },
+        });
+        if (!existant) {
+          const patiente = dossier.patienteId
+            ? await this.patientesRepo.findOne({ where: { id: dossier.patienteId } })
+            : null;
+          const nom = patiente
+            ? [patiente.nom, patiente.postnom, patiente.prenom].filter(Boolean).join(' ')
+            : dossier.numeroDossierCps;
+          const initiales = nom.trim().split(/\s+/).slice(0, 2).map((m) => m.charAt(0).toUpperCase()).join('') || '?';
+          await this.rdvRepo.save(this.rdvRepo.create({
+            dateRdv: dto.prochainRdvDate,
+            heureRdv: '08:00',
+            motif: 'Visite CPS Femme',
+            statut: 'EN_ATTENTE',
+            typeRdv: 'PROGRAMME',
+            nomPatient: nom,
+            initialesPatient: initiales,
+            typePatient: 'Mere',
+            refDossier: dossier.numeroDossierCps,
+            serviceDestination: 'CPS Femme',
+            creePar: dto.utilisateurNom ?? null,
+            enregistrePar: dto.utilisateurNom ?? null,
+          }));
+        }
+      } catch { /* Silencieux : ne pas bloquer la visite si le RDV échoue */ }
+    }
 
     return {
       message: `Visite ${enregistree.typeVisite} enregistree avec succes.`,
@@ -473,6 +535,8 @@ export class CpsFemmeService {
       where: { id: visiteId, dossierCpsId: dossierId },
     });
     if (!visite) throw new NotFoundException(`Visite CPS #${visiteId} introuvable.`);
+
+    const ancienProchainRdvDate = visite.prochainRdvDate ?? null;
 
     Object.assign(visite, {
       dateVisite: dto.dateVisite ?? visite.dateVisite,
@@ -513,6 +577,7 @@ export class CpsFemmeService {
       prochainRdvDate:
         typeof dto.prochainRdvDate !== 'undefined' ? dto.prochainRdvDate : visite.prochainRdvDate,
       observations: typeof dto.observations !== 'undefined' ? dto.observations : visite.observations,
+      modifiePar: dto.utilisateurNom ?? null,
     });
 
     const enregistree = await this.visitesRepo.save(visite);
@@ -526,6 +591,110 @@ export class CpsFemmeService {
       ressourceId: enregistree.id,
       description: `Modification visite ${enregistree.typeVisite} du dossier ${dossierId}`,
     });
+
+    // Synchroniser le rendez-vous avec la date réellement enregistrée sur la visite.
+    if (enregistree.prochainRdvDate) {
+      try {
+        const dossier = await this.dossiersRepo.findOne({ where: { id: dossierId } });
+        if (dossier?.numeroDossierCps) {
+          const dateCible = enregistree.prochainRdvDate;
+
+          const dejaSurNouvelleDate = await this.rdvRepo.findOne({
+            where: {
+              refDossier: dossier.numeroDossierCps,
+              dateRdv: dateCible,
+              serviceDestination: 'CPS Femme',
+              motif: 'Visite CPS Femme',
+              statut: Not(In(['ANNULE', 'TERMINE'])),
+            },
+          });
+
+          if (!dejaSurNouvelleDate && ancienProchainRdvDate && ancienProchainRdvDate !== dateCible) {
+            const existantAncienneDate = await this.rdvRepo.findOne({
+              where: {
+                refDossier: dossier.numeroDossierCps,
+                dateRdv: ancienProchainRdvDate,
+                serviceDestination: 'CPS Femme',
+                motif: 'Visite CPS Femme',
+                statut: Not(In(['ANNULE', 'TERMINE'])),
+              },
+            });
+
+            if (existantAncienneDate) {
+              existantAncienneDate.dateRdv = dateCible;
+              existantAncienneDate.statut = 'REPROGRAMME';
+              existantAncienneDate.modifiePar = dto.utilisateurNom ?? null;
+              await this.rdvRepo.save(existantAncienneDate);
+            }
+          }
+
+          if (!dejaSurNouvelleDate && (!ancienProchainRdvDate || ancienProchainRdvDate === dateCible)) {
+            const rdvAReprogrammer = await this.rdvRepo.findOne({
+              where: {
+                refDossier: dossier.numeroDossierCps,
+                dateRdv: Not(dateCible),
+                serviceDestination: 'CPS Femme',
+                motif: 'Visite CPS Femme',
+                statut: Not(In(['ANNULE', 'TERMINE'])),
+              },
+              order: { creeLe: 'DESC' },
+            });
+
+            if (rdvAReprogrammer) {
+              rdvAReprogrammer.dateRdv = dateCible;
+              rdvAReprogrammer.statut = 'REPROGRAMME';
+              rdvAReprogrammer.modifiePar = dto.utilisateurNom ?? null;
+              await this.rdvRepo.save(rdvAReprogrammer);
+            }
+          }
+
+          const existant = await this.rdvRepo.findOne({
+            where: {
+              refDossier: dossier.numeroDossierCps,
+              dateRdv: dateCible,
+              serviceDestination: 'CPS Femme',
+              motif: 'Visite CPS Femme',
+              statut: Not(In(['ANNULE', 'TERMINE'])),
+            },
+          });
+
+          if (!existant) {
+            const patiente = dossier.patienteId
+              ? await this.patientesRepo.findOne({ where: { id: dossier.patienteId } })
+              : null;
+            const nom = patiente
+              ? [patiente.nom, patiente.postnom, patiente.prenom].filter(Boolean).join(' ')
+              : dossier.numeroDossierCps;
+            const initiales =
+              nom
+                .trim()
+                .split(/\s+/)
+                .slice(0, 2)
+                .map((m: string) => m.charAt(0).toUpperCase())
+                .join('') || '?';
+
+            await this.rdvRepo.save(
+              this.rdvRepo.create({
+                dateRdv: dateCible,
+                heureRdv: '08:00',
+                motif: 'Visite CPS Femme',
+                statut: 'EN_ATTENTE',
+                typeRdv: 'PROGRAMME',
+                nomPatient: nom,
+                initialesPatient: initiales,
+                typePatient: 'Mere',
+                refDossier: dossier.numeroDossierCps,
+                serviceDestination: 'CPS Femme',
+                creePar: dto.utilisateurNom ?? null,
+                enregistrePar: dto.utilisateurNom ?? null,
+              }),
+            );
+          }
+        }
+      } catch {
+        // Silencieux : ne pas bloquer la modification de la visite si le RDV échoue.
+      }
+    }
 
     return { message: 'Visite CPS mise a jour.', visite: this.formaterVisite(enregistree) };
   }
@@ -601,6 +770,8 @@ export class CpsFemmeService {
       notes: d.notes,
       visites: d.visites?.map((v) => this.formaterVisite(v)) ?? [],
       creeLe: d.creeLe,
+      enregistrePar: d.enregistrePar,
+      modifiePar: d.modifiePar,
     };
   }
 
@@ -632,16 +803,15 @@ export class CpsFemmeService {
       prenom: dto.prenom ?? '',
       sexe: dto.sexe,
       dateNaissance: dto.dateNaissance,
-      // Le lien vers la mère : nom complet depuis la patiente
       nomMere: [dossier.patiente?.nom, dossier.patiente?.postnom, dossier.patiente?.prenom]
         .filter(Boolean)
         .join(' '),
       telephone: dossier.patiente?.telephone ?? '',
       adresse: dossier.patiente?.adresse ?? '',
-      // Numero de fiche généré si absent
-      numeroFiche:
+      numeroDossier:
         dto.numeroFiche ??
         `ENF-${Date.now().toString(36).toUpperCase()}-${dto.nom.substring(0, 3).toUpperCase()}`,
+      patienteId: dossier.patienteId ?? null,
       dateEnregistrement: new Date().toISOString().split('T')[0],
     });
 
@@ -679,39 +849,66 @@ export class CpsFemmeService {
       prochainRdvDate: v.prochainRdvDate,
       observations: v.observations,
       creeLe: v.creeLe,
+      enregistrePar: v.enregistrePar,
+      modifiePar: v.modifiePar,
     };
   }
 
-  // --- Examens CPS (depuis le dossier CPN associé) ---
+  // --- Examens biologiques / échographies du dossier CPS Femme ---
 
   async listerExamensCps(dossierId: string) {
-    const dossier = await this.dossiersRepo.findOne({
-      where: { id: dossierId },
-      relations: ['visites'],
-    });
+    const dossier = await this.dossiersRepo.findOne({ where: { id: dossierId } });
     if (!dossier) throw new NotFoundException(`Dossier CPS #${dossierId} introuvable.`);
-    const visites = (dossier.visites ?? []).sort((a, b) => a.numeroVisite - b.numeroVisite);
+    const examens = await this.examensCpsFemmeRepo.find({
+      where: { dossierId },
+      order: { creeLe: 'DESC' },
+    });
+    return examens.map((e) => this.formaterExamen(e));
+  }
+
+  async demanderExamen(dossierId: string, dto: CreerExamenCpsFemmeDto) {
+    const dossier = await this.dossiersRepo.findOne({ where: { id: dossierId } });
+    if (!dossier) throw new NotFoundException(`Dossier CPS #${dossierId} introuvable.`);
+    const examen = this.examensCpsFemmeRepo.create({
+      dossierId,
+      typeExamen: dto.typeExamen,
+      libelle: dto.libelle,
+      source: dto.source ?? 'INTERNE',
+      dateExamen: dto.dateExamen ?? null,
+      notes: dto.notes ?? null,
+      statut: 'DEMANDE',
+    });
+    await this.examensCpsFemmeRepo.save(examen);
+    return this.formaterExamen(examen);
+  }
+
+  async enregistrerResultatExamen(dossierId: string, examenId: string, dto: ModifierExamenCpsFemmeDto) {
+    const examen = await this.examensCpsFemmeRepo.findOne({ where: { id: examenId, dossierId } });
+    if (!examen) throw new NotFoundException(`Examen #${examenId} introuvable.`);
+    if (dto.resultat !== undefined) examen.resultat = dto.resultat;
+    if (dto.interpretation !== undefined) examen.resultat = dto.interpretation;
+    if (dto.statut !== undefined) examen.statut = dto.statut;
+    if (dto.dateResultat !== undefined) examen.dateResultat = dto.dateResultat;
+    if (dto.notes !== undefined) examen.notes = dto.notes;
+    await this.examensCpsFemmeRepo.save(examen);
+    return this.formaterExamen(examen);
+  }
+
+  private formaterExamen(e: ExamenCpsFemmeEntity) {
     return {
-      examens: visites.map((v) => ({
-        id: v.id,
-        typeVisite: v.typeVisite,
-        numeroVisite: v.numeroVisite,
-        dateVisite: v.dateVisite,
-        etatGeneral: v.etatGeneral,
-        involutionUterine: v.involutionUterine,
-        etatSeins: v.etatSeins,
-        allaitement: v.allaitement,
-        etatPlaie: v.etatPlaie,
-        saignements: v.saignements,
-        lochies: v.lochies,
-        etatPsychologique: v.etatPsychologique,
-        oedemes: v.oedemes,
-        paleur: v.paleur,
-        poids: v.poids,
-        temperature: v.temperature,
-        tensionSystolique: v.tensionSystolique,
-        tensionDiastolique: v.tensionDiastolique,
-      })),
+      id: e.id,
+      dossierId: e.dossierId,
+      typeExamen: e.typeExamen,
+      libelle: e.libelle,
+      statut: e.statut,
+      source: e.source,
+      resultat: e.resultat,
+      dateExamen: e.dateExamen,
+      dateResultat: e.dateResultat,
+      notes: e.notes,
+      prisEnChargeLe: e.prisEnChargeLe,
+      envoyeLe: e.envoyeLe,
+      creeLe: e.creeLe,
     };
   }
 

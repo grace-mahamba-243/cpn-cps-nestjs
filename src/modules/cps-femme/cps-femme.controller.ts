@@ -1,10 +1,12 @@
-import { Body, Controller, Get, Param, Patch, Post, Query } from '@nestjs/common';
+import { Body, Controller, Delete, Get, Param, Patch, Post, Query } from '@nestjs/common';
 import { CpsFemmeService } from './cps-femme.service';
 import { CreerDossierCpsDto } from './dto/creer-dossier-cps.dto';
 import { ModifierDossierCpsDto } from './dto/modifier-dossier-cps.dto';
 import { CreerVisiteCpsDto } from './dto/creer-visite-cps.dto';
 import { ModifierVisiteCpsDto } from './dto/modifier-visite-cps.dto';
 import { AnalyserVisiteCpsDto } from './dto/analyser-visite-cps.dto';
+import { CreerExamenCpsFemmeDto } from './dto/creer-examen-cps-femme.dto';
+import { ModifierExamenCpsFemmeDto } from './dto/modifier-examen-cps-femme.dto';
 
 // Ce controleur expose les endpoints REST du module CPS Femme (suivi postnatal).
 @Controller('cps-femme')
@@ -59,6 +61,11 @@ export class CpsFemmeController {
     return this.cpsFemmeService.cloturerDossier(dossierId, dto);
   }
 
+  @Delete(':dossierId')
+  supprimerDossier(@Param('dossierId') dossierId: string) {
+    return this.cpsFemmeService.supprimerDossier(dossierId);
+  }
+
   // --- Visites CPS ---
 
   @Get(':dossierId/visites')
@@ -91,9 +98,23 @@ export class CpsFemmeController {
     return this.cpsFemmeService.analyserVisite(dossierId, dto);
   }
 
-  // Examens CPS (depuis le dossier CPN associé)
+  // Examens biologiques / échographies du dossier CPS Femme
   @Get(':dossierId/examens')
   listerExamens(@Param('dossierId') dossierId: string) {
     return this.cpsFemmeService.listerExamensCps(dossierId);
+  }
+
+  @Post(':dossierId/examens')
+  demanderExamen(@Param('dossierId') dossierId: string, @Body() dto: CreerExamenCpsFemmeDto) {
+    return this.cpsFemmeService.demanderExamen(dossierId, dto);
+  }
+
+  @Patch(':dossierId/examens/:examenId')
+  enregistrerResultat(
+    @Param('dossierId') dossierId: string,
+    @Param('examenId') examenId: string,
+    @Body() dto: ModifierExamenCpsFemmeDto,
+  ) {
+    return this.cpsFemmeService.enregistrerResultatExamen(dossierId, examenId, dto);
   }
 }

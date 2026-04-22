@@ -1,10 +1,12 @@
-import { IsDateString, IsIn, IsInt, IsOptional, IsString, Length, Matches, Min } from 'class-validator';
+import { IsDateString, IsIn, IsInt, IsOptional, IsString, Length, Min } from 'class-validator';
 
 // DTO de creation d un dossier administratif patiente.
 export class CreerPatienteDto {
+  // numeroDossier est genere automatiquement par le service - champ ignore si fourni
+  @IsOptional()
   @IsString()
   @Length(1, 30)
-  numeroDossier: string;
+  numeroDossier?: string;
 
   @IsString()
   @Length(1, 100)

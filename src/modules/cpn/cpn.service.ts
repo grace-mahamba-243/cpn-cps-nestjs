@@ -1,11 +1,12 @@
 import { BadRequestException, ConflictException, Injectable, NotFoundException } from '@nestjs/common';
 import OpenAI from 'openai';
 import { InjectRepository } from '@nestjs/typeorm';
-import { Like, Repository } from 'typeorm';
+import { Like, Repository, Not, In } from 'typeorm';
 import { DossierCpnEntity } from './entities/dossier-cpn.entity';
 import { ContactCpnEntity } from './entities/contact-cpn.entity';
 import { ExamenCpnEntity } from './entities/examen-cpn.entity';
 import { PatienteEntity } from '../patientes/entities/patiente.entity';
+import { AccouchementEntity } from '../accouchements/entities/accouchement.entity';
 import { CreerDossierCpnDto } from './dto/creer-dossier-cpn.dto';
 import { ModifierDossierCpnDto } from './dto/modifier-dossier-cpn.dto';
 import { CreerContactCpnDto } from './dto/creer-contact-cpn.dto';
@@ -14,6 +15,7 @@ import { AnalyserContactCpnDto } from './dto/analyser-contact-cpn.dto';
 import { CreerExamenCpnDto } from './dto/creer-examen-cpn.dto';
 import { ModifierExamenCpnDto } from './dto/modifier-examen-cpn.dto';
 import { JournalService } from '../journal/journal.service';
+import { RendezVousEntity } from '../rendez-vous/entities/rendez-vous.entity';
 
 // Ce service centralise toute la logique metier du module CPN.
 @Injectable()
@@ -29,17 +31,23 @@ export class CpnService {
     private readonly examensRepo: Repository<ExamenCpnEntity>,
     @InjectRepository(PatienteEntity)
     private readonly patientesRepo: Repository<PatienteEntity>,
+    @InjectRepository(AccouchementEntity)
+    private readonly accouchementsRepo: Repository<AccouchementEntity>,
+    @InjectRepository(RendezVousEntity)
+    private readonly rdvRepo: Repository<RendezVousEntity>,
     private readonly journalService: JournalService,
   ) {}
 
   // --- Dossiers CPN ---
 
-  async listerDossiers(recherche?: string, patienteId?: string) {
+  async listerDossiers(recherche?: string, patienteId?: string, statut?: string) {
     let dossiers: DossierCpnEntity[];
 
     if (patienteId) {
+      const where: any = { patienteId };
+      if (statut) where.statut = statut;
       dossiers = await this.dossiersRepo.find({
-        where: { patienteId },
+        where,
         relations: ['patiente', 'contacts'],
         order: { creeLe: 'DESC' },
       });
@@ -48,6 +56,19 @@ export class CpnService {
 
     if (recherche && recherche.trim()) {
       const terme = recherche.trim();
+
+      // Recherche directe par numéro de dossier CPN (ex: CPN-2026-0001), tous statuts inclus
+      if (/^CPN-/i.test(terme) || /^\d{4}/.test(terme)) {
+        const dossiersDirects = await this.dossiersRepo.find({
+          where: { numeroDossierCpn: Like(`%${terme}%`) },
+          relations: ['patiente', 'contacts'],
+          order: { creeLe: 'DESC' },
+        });
+        if (dossiersDirects.length > 0) {
+          return { dossiers: dossiersDirects.map((d) => this.formaterDossierResume(d)) };
+        }
+      }
+
       const patientes = await this.patientesRepo.find({
         where: [
           { nom: Like(`%${terme}%`) },
@@ -114,17 +135,21 @@ export class CpnService {
   }
 
   async ouvrirDossier(dto: CreerDossierCpnDto) {
-    const patiente = await this.patientesRepo.findOne({
-      where: { id: dto.patienteId },
-    });
-
-    if (!patiente) {
-      throw new NotFoundException('Patiente introuvable.');
+    // Resoudre la patiente : priorite au numeroDossierMere (AFIA-...), sinon patienteId UUID
+    let patiente: PatienteEntity | null = null;
+    if (dto.numeroDossierMere) {
+      patiente = await this.patientesRepo.findOne({ where: { numeroDossier: dto.numeroDossierMere } });
+      if (!patiente) throw new NotFoundException(`Aucune patiente trouvée avec le dossier "${dto.numeroDossierMere}".`);
+    } else if (dto.patienteId) {
+      patiente = await this.patientesRepo.findOne({ where: { id: dto.patienteId } });
+      if (!patiente) throw new NotFoundException('Patiente introuvable.');
+    } else {
+      throw new NotFoundException('Veuillez fournir numeroDossierMere ou patienteId.');
     }
 
     // Vérifier qu'il n'existe pas déjà un dossier OUVERT pour cette patiente
     const dossierActif = await this.dossiersRepo.findOne({
-      where: { patienteId: dto.patienteId, statut: 'OUVERT' },
+      where: { patienteId: patiente.id, statut: 'OUVERT' },
     });
     if (dossierActif) {
       throw new ConflictException({
@@ -136,7 +161,7 @@ export class CpnService {
     const numeroDossierCpn = await this.genererNumeroDossierCpn();
 
     const dossier = this.dossiersRepo.create({
-      patienteId: dto.patienteId,
+      patienteId: patiente.id,
       numeroDossierCpn,
       dateOuverture: dto.dateOuverture,
       statut: 'OUVERT',
@@ -157,6 +182,7 @@ export class CpnService {
       notes: dto.notes ?? null,
       facteursRisque: dto.facteursRisque ? JSON.stringify(dto.facteursRisque) : null,
       taille: dto.taille ?? null,
+      enregistrePar: dto.utilisateurNom ?? null,
     });
 
     const enregistre = await this.dossiersRepo.save(dossier);
@@ -185,6 +211,23 @@ export class CpnService {
 
     if (!dossier) {
       throw new NotFoundException(`Dossier CPN #${id} introuvable.`);
+    }
+
+    // Un dossier CPN ne peut être clos que par un accouchement, pas manuellement
+    if (dto.statut === 'CLOS' && dossier.statut !== 'CLOS') {
+      throw new BadRequestException(
+        'Un dossier CPN ne peut être clôturé que par l\'enregistrement d\'un accouchement. La clôture manuelle est interdite.',
+      );
+    }
+
+    // Bloquer la réouverture d'un dossier CPN déjà lié à un accouchement
+    if (dto.statut === 'OUVERT' && dossier.statut === 'CLOS') {
+      const accLie = await this.accouchementsRepo.findOne({ where: { dossierCpnId: id } });
+      if (accLie) {
+        throw new ConflictException(
+          `Ce dossier CPN est lié à l'accouchement ${accLie.numeroAccouchement ?? accLie.id} et ne peut pas être rouvert.`,
+        );
+      }
     }
 
     Object.assign(dossier, {
@@ -234,6 +277,7 @@ export class CpnService {
           : dto.statut === 'OUVERT'
             ? null
             : dossier.dateCloture,
+      modifiePar: dto.utilisateurNom ?? null,
     });
 
     const enregistre = await this.dossiersRepo.save(dossier);
@@ -245,13 +289,37 @@ export class CpnService {
       module: 'CPN',
       section: 'Dossier',
       ressourceId: enregistre.id,
-      description: `Modification du dossier CPN ${enregistre.numeroDossierCpn ?? id}`,
+      description: `Modification du dossier CPN ${enregistre.numeroDossierCpn ?? dossier.numeroDossierCpn ?? 'N° indisponible'}`,
+      meta: {
+        numeroDossierCpn: enregistre.numeroDossierCpn ?? dossier.numeroDossierCpn ?? null,
+      },
     });
 
     return {
       message: 'Dossier CPN mis a jour.',
       dossier: this.formaterDossierResume(enregistre),
     };
+  }
+
+  async supprimerDossier(id: string) {
+    const dossier = await this.dossiersRepo.findOne({
+      where: { id },
+      relations: ['contacts'],
+    });
+    if (!dossier) throw new NotFoundException(`Dossier CPN #${id} introuvable.`);
+
+    const accLie = await this.accouchementsRepo.findOne({ where: { dossierCpnId: id } });
+    if (accLie) {
+      throw new BadRequestException('Ce dossier CPN est lié à un accouchement et ne peut pas être supprimé.');
+    }
+
+    const nbContacts = await this.contactsRepo.count({ where: { dossierCpnId: id } });
+    if (nbContacts > 0) {
+      throw new BadRequestException('Ce dossier CPN contient des contacts et ne peut pas être supprimé.');
+    }
+
+    await this.dossiersRepo.remove(dossier);
+    return { message: 'Dossier CPN supprimé avec succès.' };
   }
 
   // --- Contacts CPN ---
@@ -307,6 +375,7 @@ export class CpnService {
       traitementPrescrit: dto.traitementPrescrit ?? null,
       prochainRdvDate: dto.prochainRdvDate ?? null,
       prochainRdvNotes: dto.prochainRdvNotes ?? null,
+      enregistrePar: dto.utilisateurNom ?? null,
     });
 
     const enregistre = await this.contactsRepo.save(contact);
@@ -320,9 +389,46 @@ export class CpnService {
         module: 'CPN',
         section: 'CONTACT',
         ressourceId: enregistre.id,
-        description: `Création du contact CPN n°${enregistre.numeroContact} pour le dossier ${dossierId}`,
-        meta: { dossierId, contactId: enregistre.id, numeroContact: enregistre.numeroContact },
+        description: `Création du contact CPN n°${enregistre.numeroContact} pour le dossier ${dossier.numeroDossierCpn ?? 'N° indisponible'}`,
+        meta: {
+          dossierId,
+          numeroDossierCpn: dossier.numeroDossierCpn ?? null,
+          contactId: enregistre.id,
+          numeroContact: enregistre.numeroContact,
+        },
       });
+    }
+
+    // Créer automatiquement un rendez-vous EN_ATTENTE si une date de prochain RDV est définie
+    if (dto.prochainRdvDate) {
+      try {
+        const existant = await this.rdvRepo.findOne({
+          where: { refDossier: dossier.numeroDossierCpn, dateRdv: dto.prochainRdvDate, statut: Not(In(['ANNULE', 'TERMINE'])) },
+        });
+        if (!existant) {
+          const patiente = dossier.patienteId
+            ? await this.patientesRepo.findOne({ where: { id: dossier.patienteId } })
+            : null;
+          const nom = patiente
+            ? [patiente.nom, patiente.postnom, patiente.prenom].filter(Boolean).join(' ')
+            : dossier.numeroDossierCpn;
+          const initiales = nom.trim().split(/\s+/).slice(0, 2).map((m: string) => m.charAt(0).toUpperCase()).join('') || '?';
+          await this.rdvRepo.save(this.rdvRepo.create({
+            dateRdv: dto.prochainRdvDate,
+            heureRdv: '08:00',
+            motif: 'Contact CPN',
+            statut: 'EN_ATTENTE',
+            typeRdv: 'PROGRAMME',
+            nomPatient: nom,
+            initialesPatient: initiales,
+            typePatient: 'Mere',
+            refDossier: dossier.numeroDossierCpn,
+            serviceDestination: 'Maternite (CPN)',
+            creePar: dto.utilisateurNom ?? null,
+            enregistrePar: dto.utilisateurNom ?? null,
+          }));
+        }
+      } catch { /* Silencieux : ne pas bloquer le contact si le RDV échoue */ }
     }
 
     return {
@@ -352,6 +458,8 @@ export class CpnService {
     if (!contact) {
       throw new NotFoundException(`Contact CPN #${contactId} introuvable.`);
     }
+
+    const ancienProchainRdvDate = contact.prochainRdvDate ?? null;
 
     Object.assign(contact, {
       dateContact: dto.dateContact ?? contact.dateContact,
@@ -388,9 +496,12 @@ export class CpnService {
         typeof dto.prochainRdvDate !== 'undefined' ? dto.prochainRdvDate : contact.prochainRdvDate,
       prochainRdvNotes:
         typeof dto.prochainRdvNotes !== 'undefined' ? dto.prochainRdvNotes : contact.prochainRdvNotes,
+      modifiePar: dto.utilisateurNom ?? null,
     });
 
     const enregistre = await this.contactsRepo.save(contact);
+
+    const dossierJournal = await this.dossiersRepo.findOne({ where: { id: dossierId } });
 
     // Journal
     if (dto.utilisateurId && dto.utilisateurNom) {
@@ -401,9 +512,118 @@ export class CpnService {
         module: 'CPN',
         section: 'CONTACT',
         ressourceId: contactId,
-        description: `Modification du contact CPN n°${enregistre.numeroContact} pour le dossier ${dossierId}`,
-        meta: { dossierId, contactId },
+        description: `Modification du contact CPN n°${enregistre.numeroContact} pour le dossier ${dossierJournal?.numeroDossierCpn ?? 'N° indisponible'}`,
+        meta: {
+          dossierId,
+          numeroDossierCpn: dossierJournal?.numeroDossierCpn ?? null,
+          contactId,
+          numeroContact: enregistre.numeroContact,
+        },
       });
+    }
+
+    // Synchroniser le rendez-vous avec la date réellement enregistrée sur le contact.
+    if (enregistre.prochainRdvDate) {
+      try {
+        const dossier = await this.dossiersRepo.findOne({ where: { id: dossierId } });
+        if (dossier?.numeroDossierCpn) {
+          const dateCible = enregistre.prochainRdvDate;
+
+          const dejaSurNouvelleDate = await this.rdvRepo.findOne({
+            where: {
+              refDossier: dossier.numeroDossierCpn,
+              dateRdv: dateCible,
+              serviceDestination: 'Maternite (CPN)',
+              motif: 'Contact CPN',
+              statut: Not(In(['ANNULE', 'TERMINE'])),
+            },
+          });
+
+          if (!dejaSurNouvelleDate && ancienProchainRdvDate && ancienProchainRdvDate !== dateCible) {
+            const existantAncienneDate = await this.rdvRepo.findOne({
+              where: {
+                refDossier: dossier.numeroDossierCpn,
+                dateRdv: ancienProchainRdvDate,
+                serviceDestination: 'Maternite (CPN)',
+                motif: 'Contact CPN',
+                statut: Not(In(['ANNULE', 'TERMINE'])),
+              },
+            });
+
+            if (existantAncienneDate) {
+              existantAncienneDate.dateRdv = dateCible;
+              existantAncienneDate.statut = 'REPROGRAMME';
+              existantAncienneDate.modifiePar = dto.utilisateurNom ?? null;
+              await this.rdvRepo.save(existantAncienneDate);
+            }
+          }
+
+          if (!dejaSurNouvelleDate && (!ancienProchainRdvDate || ancienProchainRdvDate === dateCible)) {
+            const rdvAReprogrammer = await this.rdvRepo.findOne({
+              where: {
+                refDossier: dossier.numeroDossierCpn,
+                dateRdv: Not(dateCible),
+                serviceDestination: 'Maternite (CPN)',
+                motif: 'Contact CPN',
+                statut: Not(In(['ANNULE', 'TERMINE'])),
+              },
+              order: { creeLe: 'DESC' },
+            });
+
+            if (rdvAReprogrammer) {
+              rdvAReprogrammer.dateRdv = dateCible;
+              rdvAReprogrammer.statut = 'REPROGRAMME';
+              rdvAReprogrammer.modifiePar = dto.utilisateurNom ?? null;
+              await this.rdvRepo.save(rdvAReprogrammer);
+            }
+          }
+
+          const existant = await this.rdvRepo.findOne({
+            where: {
+              refDossier: dossier.numeroDossierCpn,
+              dateRdv: dateCible,
+              serviceDestination: 'Maternite (CPN)',
+              motif: 'Contact CPN',
+              statut: Not(In(['ANNULE', 'TERMINE'])),
+            },
+          });
+
+          if (!existant) {
+            const patiente = dossier.patienteId
+              ? await this.patientesRepo.findOne({ where: { id: dossier.patienteId } })
+              : null;
+            const nom = patiente
+              ? [patiente.nom, patiente.postnom, patiente.prenom].filter(Boolean).join(' ')
+              : dossier.numeroDossierCpn;
+            const initiales =
+              nom
+                .trim()
+                .split(/\s+/)
+                .slice(0, 2)
+                .map((m: string) => m.charAt(0).toUpperCase())
+                .join('') || '?';
+
+            await this.rdvRepo.save(
+              this.rdvRepo.create({
+                dateRdv: dateCible,
+                heureRdv: '08:00',
+                motif: 'Contact CPN',
+                statut: 'EN_ATTENTE',
+                typeRdv: 'PROGRAMME',
+                nomPatient: nom,
+                initialesPatient: initiales,
+                typePatient: 'Mere',
+                refDossier: dossier.numeroDossierCpn,
+                serviceDestination: 'Maternite (CPN)',
+                creePar: dto.utilisateurNom ?? null,
+                enregistrePar: dto.utilisateurNom ?? null,
+              }),
+            );
+          }
+        }
+      } catch {
+        // Silencieux : ne pas bloquer la modification du contact si le RDV échoue.
+      }
     }
 
     return {
@@ -538,6 +758,9 @@ export class CpnService {
       dateProbableAccouchement: dossier.dateProbableAccouchement,
       gestite: dossier.gestite,
       parite: dossier.parite,
+      groupeSanguin: dossier.groupeSanguin,
+      rhesus: dossier.rhesus,
+      vihStatut: dossier.vihStatut,
       creeLe: dossier.creeLe,
       notesCloture: dossier.notesCloture,
       closPar: dossier.closPar,
@@ -588,6 +811,8 @@ export class CpnService {
       contacts: (dossier.contacts ?? []).map((c) => this.formaterContact(c)),
       examens: (dossier.examens ?? []).map((e) => this.formaterExamen(e)),
       misAJourLe: dossier.misAJourLe,
+      enregistrePar: dossier.enregistrePar,
+      modifiePar: dossier.modifiePar,
     };
   }
 
@@ -622,6 +847,8 @@ export class CpnService {
       prochainRdvNotes: contact.prochainRdvNotes,
       examens: (contact.examens ?? []).map((e) => this.formaterExamen(e)),
       creeLe: contact.creeLe,
+      enregistrePar: contact.enregistrePar,
+      modifiePar: contact.modifiePar,
     };
   }
 
