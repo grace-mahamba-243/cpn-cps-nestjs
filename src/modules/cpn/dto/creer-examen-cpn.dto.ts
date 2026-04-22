@@ -1,4 +1,4 @@
-import {
+﻿import {
   IsDateString,
   IsIn,
   IsOptional,
@@ -32,4 +32,11 @@ export class CreerExamenCpnDto {
   @IsOptional()
   @IsString()
   notes?: string | null;
+  @IsOptional()
+  @IsString()
+  utilisateurId?: string;
+
+  @IsOptional()
+  @IsString()
+  utilisateurNom?: string;
 }

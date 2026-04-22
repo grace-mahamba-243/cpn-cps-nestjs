@@ -1,6 +1,6 @@
-import { ConflictException, Injectable, NotFoundException } from '@nestjs/common';
+import { BadRequestException, ConflictException, Injectable, NotFoundException } from '@nestjs/common';
 import { InjectRepository } from '@nestjs/typeorm';
-import { Like, Repository } from 'typeorm';
+import { In, Like, Not, Repository } from 'typeorm';
 import { DossierCpsEnfantEntity } from './entities/dossier-cps-enfant.entity';
 import { VisiteCpsEnfantEntity } from './entities/visite-cps-enfant.entity';
 import { EnfantEntity } from '../enfants/entities/enfant.entity';
@@ -9,6 +9,8 @@ import { CreerDossierCpsEnfantDto } from './dto/creer-dossier-cps-enfant.dto';
 import { CreerVisiteCpsEnfantDto } from './dto/creer-visite-cps-enfant.dto';
 import { CreerExamenCpsEnfantDto } from './dto/creer-examen-cps-enfant.dto';
 import { ModifierExamenCpsEnfantDto } from './dto/modifier-examen-cps-enfant.dto';
+import { JournalService } from '../journal/journal.service';
+import { RendezVousEntity } from '../rendez-vous/entities/rendez-vous.entity';
 
 // Retourne true si le dossier a dépassé 59 mois depuis son ouverture.
 function estExpireApres59Mois(dateOuverture: Date | string): boolean {
@@ -31,6 +33,9 @@ export class CpsEnfantService {
     private readonly enfantsRepo: Repository<EnfantEntity>,
     @InjectRepository(ExamenCpsEnfantEntity)
     private readonly examensRepo: Repository<ExamenCpsEnfantEntity>,
+    @InjectRepository(RendezVousEntity)
+    private readonly rdvRepo: Repository<RendezVousEntity>,
+    private readonly journalService: JournalService,
   ) {}
 
   // Recherche d enfants pour l ouverture d un dossier.
@@ -143,7 +148,7 @@ export class CpsEnfantService {
       numeroDossierCps: dto.numeroDossierCps,
       enfantId: dto.enfantId,
       dateOuverture: dto.dateOuverture,
-      dateNaissance: dto.dateNaissance,
+      dateNaissance: dto.dateNaissance ?? enfant.dateNaissance,
       typeAccouchement: dto.typeAccouchement ?? 'INTERNE',
       poidsNaissanceG: dto.poidsNaissanceG ?? null,
       scoreApgar1min: dto.scoreApgar1min ?? null,
@@ -155,9 +160,23 @@ export class CpsEnfantService {
       mereTelephone: dto.mereTelephone ?? null,
       notes: dto.notes ?? null,
       statut: 'OUVERT',
+      enregistrePar: dto.utilisateurNom ?? null,
     });
 
-    return this.dossiersRepo.save(entite);
+    const sauvegarde = await this.dossiersRepo.save(entite);
+
+    const nomEnfant = [enfant.nom, enfant.postnom, enfant.prenom].filter(Boolean).join(' ');
+    this.journalService.enregistrer({
+      utilisateurId: dto.utilisateurId,
+      utilisateurNom: dto.utilisateurNom,
+      typeAction: 'CREATION',
+      module: 'CPS_ENFANT',
+      section: 'dossier',
+      ressourceId: sauvegarde.id,
+      description: `Ouverture du dossier CPS Enfant ${dto.numeroDossierCps} pour ${nomEnfant}.`,
+    });
+
+    return sauvegarde;
   }
 
   // Cloture un dossier CPS Enfant.
@@ -166,7 +185,36 @@ export class CpsEnfantService {
     if (!dossier) throw new NotFoundException(`Dossier CPS Enfant #${id} introuvable.`);
     dossier.statut = 'CLOS';
     if (notes) dossier.notes = notes;
-    return this.dossiersRepo.save(dossier);
+    const sauvegarde = await this.dossiersRepo.save(dossier);
+
+    this.journalService.enregistrer({
+      typeAction: 'MODIFICATION',
+      module: 'CPS_ENFANT',
+      section: 'dossier',
+      ressourceId: id,
+      description: `Clôture du dossier CPS Enfant ${dossier.numeroDossierCps}.`,
+      meta: { ancienStatut: 'OUVERT', nouveauStatut: 'CLOS' },
+    });
+
+    return sauvegarde;
+  }
+
+  async supprimerDossier(id: string) {
+    const dossier = await this.dossiersRepo.findOne({ where: { id } });
+    if (!dossier) throw new NotFoundException(`Dossier CPS Enfant #${id} introuvable.`);
+
+    const nbVisites = await this.visitesRepo.count({ where: { dossierCpsEnfantId: id } });
+    if (nbVisites > 0) {
+      throw new BadRequestException('Ce dossier CPS Enfant contient des visites et ne peut pas être supprimé.');
+    }
+
+    const nbExamens = await this.examensRepo.count({ where: { dossierId: id } });
+    if (nbExamens > 0) {
+      throw new BadRequestException('Ce dossier CPS Enfant contient des examens et ne peut pas être supprimé.');
+    }
+
+    await this.dossiersRepo.remove(dossier);
+    return { message: 'Dossier CPS Enfant supprimé avec succès.' };
   }
 
   // --- Visites ---
@@ -221,9 +269,55 @@ export class CpsEnfantService {
       prochainTypeVisite: dto.prochainTypeVisite ?? null,
       agentSante: dto.agentSante ?? null,
       observations: dto.observations ?? null,
+      enregistrePar: dto.utilisateurNom ?? null,
     });
 
-    return this.visitesRepo.save(entite);
+    const sauvegarde = await this.visitesRepo.save(entite);
+
+    this.journalService.enregistrer({
+      utilisateurId: dto.utilisateurId,
+      utilisateurNom: dto.utilisateurNom,
+      typeAction: 'CREATION',
+      module: 'CPS_ENFANT',
+      section: 'visite',
+      ressourceId: sauvegarde.id,
+      description: `Enregistrement d'une visite ${dto.typeVisite} pour le dossier CPS Enfant #${dto.dossierCpsEnfantId}.`,
+      meta: { typeVisite: dto.typeVisite, dateVisite: dto.dateVisite },
+    });
+
+    // Créer automatiquement un rendez-vous EN_ATTENTE si une date de prochain RDV est définie
+    if (dto.prochainRdvDate) {
+      try {
+        const existant = await this.rdvRepo.findOne({
+          where: { refDossier: dossier.numeroDossierCps, dateRdv: dto.prochainRdvDate, statut: Not(In(['ANNULE', 'TERMINE'])) },
+        });
+        if (!existant) {
+          const enfant = dossier.enfantId
+            ? await this.enfantsRepo.findOne({ where: { id: dossier.enfantId } })
+            : null;
+          const nom = enfant
+            ? [enfant.nom, enfant.postnom, enfant.prenom].filter(Boolean).join(' ')
+            : dossier.mereNom ?? dossier.numeroDossierCps;
+          const initiales = nom.trim().split(/\s+/).slice(0, 2).map((m) => m.charAt(0).toUpperCase()).join('') || '?';
+          await this.rdvRepo.save(this.rdvRepo.create({
+            dateRdv: dto.prochainRdvDate,
+            heureRdv: '08:00',
+            motif: 'Visite CPS Enfant',
+            statut: 'EN_ATTENTE',
+            typeRdv: 'PROGRAMME',
+            nomPatient: nom,
+            initialesPatient: initiales,
+            typePatient: 'Enfant',
+            refDossier: dossier.numeroDossierCps,
+            serviceDestination: 'CPS Enfant',
+            creePar: dto.utilisateurNom ?? null,
+            enregistrePar: dto.utilisateurNom ?? null,
+          }));
+        }
+      } catch { /* Silencieux : ne pas bloquer la visite si le RDV échoue */ }
+    }
+
+    return sauvegarde;
   }
 
   // --- Formateur résumé ---
@@ -277,20 +371,47 @@ export class CpsEnfantService {
       dateExamen: dto.dateExamen ?? null,
       notes: dto.notes ?? null,
       statut: 'DEMANDE',
+      enregistrePar: dto.utilisateurNom ?? null,
     });
     await this.examensRepo.save(examen);
+
+    this.journalService.enregistrer({
+      utilisateurId: dto.utilisateurId,
+      utilisateurNom: dto.utilisateurNom,
+      typeAction: 'CREATION',
+      module: 'CPS_ENFANT',
+      section: 'examen',
+      ressourceId: examen.id,
+      description: `Demande d'examen "${dto.libelle}" pour le dossier CPS Enfant #${dossierId}.`,
+      meta: { typeExamen: dto.typeExamen, libelle: dto.libelle },
+    });
+
     return this.formaterExamen(examen);
   }
 
   async enregistrerResultatExamen(dossierId: string, examenId: string, dto: ModifierExamenCpsEnfantDto) {
     const examen = await this.examensRepo.findOne({ where: { id: examenId, dossierId } });
     if (!examen) throw new NotFoundException(`Examen #${examenId} introuvable.`);
+    const ancienStatut = examen.statut;
     if (dto.resultat !== undefined) examen.resultat = dto.resultat;
     if (dto.interpretation !== undefined) examen.resultat = dto.interpretation;
     if (dto.statut !== undefined) examen.statut = dto.statut;
     if (dto.dateResultat !== undefined) examen.dateResultat = dto.dateResultat;
     if (dto.notes !== undefined) examen.notes = dto.notes;
+    examen.modifiePar = dto.utilisateurNom ?? null;
     await this.examensRepo.save(examen);
+
+    this.journalService.enregistrer({
+      utilisateurId: dto.utilisateurId,
+      utilisateurNom: dto.utilisateurNom,
+      typeAction: 'MODIFICATION',
+      module: 'CPS_ENFANT',
+      section: 'examen',
+      ressourceId: examenId,
+      description: `Résultat enregistré pour l'examen "${examen.libelle}" du dossier CPS Enfant #${dossierId}.`,
+      meta: { ancienStatut, nouveauStatut: examen.statut, resultat: examen.resultat },
+    });
+
     return this.formaterExamen(examen);
   }
 
@@ -309,6 +430,8 @@ export class CpsEnfantService {
       prisEnChargeLe: e.prisEnChargeLe,
       envoyeLe: e.envoyeLe,
       creeLe: e.creeLe,
+      enregistrePar: e.enregistrePar,
+      modifiePar: e.modifiePar,
     };
   }
 }

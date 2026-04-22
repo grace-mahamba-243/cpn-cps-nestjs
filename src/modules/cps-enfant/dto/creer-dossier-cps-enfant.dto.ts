@@ -1,4 +1,4 @@
-import { IsDateString, IsIn, IsInt, IsNotEmpty, IsOptional, IsString, Max, Min } from 'class-validator';
+﻿import { IsDateString, IsIn, IsInt, IsNotEmpty, IsOptional, IsString, Max, Min } from 'class-validator';
 
 // DTO de création d un dossier CPS Enfant.
 export class CreerDossierCpsEnfantDto {
@@ -14,9 +14,9 @@ export class CreerDossierCpsEnfantDto {
   @IsDateString()
   dateOuverture: string;
 
-  @IsNotEmpty()
+  @IsOptional()
   @IsDateString()
-  dateNaissance: string;
+  dateNaissance?: string;
 
   @IsOptional()
   @IsIn(['INTERNE', 'EXTERNE'])
@@ -24,7 +24,7 @@ export class CreerDossierCpsEnfantDto {
 
   @IsOptional()
   @IsInt()
-  @Min(100) @Max(6000)
+  @Min(0) @Max(6000)
   poidsNaissanceG?: number;
 
   @IsOptional()
@@ -60,4 +60,11 @@ export class CreerDossierCpsEnfantDto {
   @IsOptional()
   @IsString()
   notes?: string;
+  @IsOptional()
+  @IsString()
+  utilisateurId?: string;
+
+  @IsOptional()
+  @IsString()
+  utilisateurNom?: string;
 }

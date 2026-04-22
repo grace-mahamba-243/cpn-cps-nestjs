@@ -1,4 +1,4 @@
-import {
+﻿import {
   IsDateString,
   IsIn,
   IsInt,
@@ -70,23 +70,47 @@ export class CreerEnfantDto {
   ageGestationnelSemaines?: number;
 
   // --- Administratif ---
+  @IsOptional()
   @IsString()
   @Length(1, 100)
-  nomMere: string;
+  nomMere?: string;
 
   @IsOptional()
   @IsString()
   @Length(1, 100)
   nomPere?: string;
 
+  @IsOptional()
   @IsString()
   @Length(1, 30)
-  telephone: string;
+  telephone?: string;
 
+  @IsOptional()
   @IsString()
   @Length(1, 200)
-  adresse: string;
+  adresse?: string;
 
   @IsDateString()
   dateEnregistrement: string;
+
+  @IsOptional()
+  @IsUUID()
+  mereId?: string;
+
+  @IsOptional()
+  @IsUUID()
+  accouchementId?: string;
+
+  @IsOptional()
+  @IsInt()
+  @Min(0)
+  indexNouveauNe?: number;
+
+  @IsOptional()
+  @IsString()
+  utilisateurId?: string;
+
+  @IsOptional()
+  @IsString()
+  utilisateurNom?: string;
 }

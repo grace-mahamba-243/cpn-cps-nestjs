@@ -6,6 +6,8 @@ import { DossierCpsEnfantEntity } from './entities/dossier-cps-enfant.entity';
 import { VisiteCpsEnfantEntity } from './entities/visite-cps-enfant.entity';
 import { EnfantEntity } from '../enfants/entities/enfant.entity';
 import { ExamenCpsEnfantEntity } from './entities/examen-cps-enfant.entity';
+import { JournalModule } from '../journal/journal.module';
+import { RendezVousEntity } from '../rendez-vous/entities/rendez-vous.entity';
 
 // Ce module regroupe les entites et la logique metier du suivi postnatal CPS Enfant.
 @Module({
@@ -15,7 +17,9 @@ import { ExamenCpsEnfantEntity } from './entities/examen-cps-enfant.entity';
       VisiteCpsEnfantEntity,
       EnfantEntity,
       ExamenCpsEnfantEntity,
+      RendezVousEntity,
     ]),
+    JournalModule,
   ],
   controllers: [CpsEnfantController],
   providers: [CpsEnfantService],

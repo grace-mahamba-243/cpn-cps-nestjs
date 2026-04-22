@@ -42,6 +42,9 @@ export class UtilisateurAuthEntity {
   @Column({ name: 'mot_de_passe_hash', type: 'varchar', length: 255 })
   motDePasseHash!: string;
 
+  @Column({ name: 'doit_changer_mot_de_passe', type: 'boolean', default: false })
+  doitChangerMotDePasse!: boolean;
+
   @Column({ type: 'boolean', default: true })
   actif!: boolean;
 
@@ -54,6 +57,12 @@ export class UtilisateurAuthEntity {
   })
   @JoinColumn({ name: 'role_id' })
   role!: RoleEntity;
+
+  @Column({ name: 'enregistre_par', type: 'varchar', length: 200, nullable: true })
+  enregistrePar!: string | null;
+
+  @Column({ name: 'modifie_par', type: 'varchar', length: 200, nullable: true })
+  modifiePar!: string | null;
 
   @OneToMany(() => SessionAuthentificationEntity, (session) => session.utilisateur)
   sessions!: SessionAuthentificationEntity[];

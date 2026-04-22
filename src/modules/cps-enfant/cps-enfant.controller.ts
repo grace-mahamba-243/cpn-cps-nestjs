@@ -1,4 +1,4 @@
-import { Body, Controller, Get, Param, Patch, Post, Query } from '@nestjs/common';
+import { Body, Controller, Delete, Get, Param, Patch, Post, Query } from '@nestjs/common';
 import { CpsEnfantService } from './cps-enfant.service';
 import { CreerDossierCpsEnfantDto } from './dto/creer-dossier-cps-enfant.dto';
 import { CreerVisiteCpsEnfantDto } from './dto/creer-visite-cps-enfant.dto';
@@ -44,6 +44,11 @@ export class CpsEnfantController {
     @Body() dto: { notes?: string },
   ) {
     return this.cpsEnfantService.cloturerDossier(dossierId, dto.notes);
+  }
+
+  @Delete(':dossierId')
+  supprimerDossier(@Param('dossierId') dossierId: string) {
+    return this.cpsEnfantService.supprimerDossier(dossierId);
   }
 
   // --- Visites CPS Enfant ---

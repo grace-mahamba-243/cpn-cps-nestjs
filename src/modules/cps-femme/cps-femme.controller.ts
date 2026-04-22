@@ -1,4 +1,4 @@
-import { Body, Controller, Get, Param, Patch, Post, Query } from '@nestjs/common';
+import { Body, Controller, Delete, Get, Param, Patch, Post, Query } from '@nestjs/common';
 import { CpsFemmeService } from './cps-femme.service';
 import { CreerDossierCpsDto } from './dto/creer-dossier-cps.dto';
 import { ModifierDossierCpsDto } from './dto/modifier-dossier-cps.dto';
@@ -59,6 +59,11 @@ export class CpsFemmeController {
     @Body() dto: { closPar: string; notesCloture?: string; utilisateurId?: string; utilisateurNom?: string },
   ) {
     return this.cpsFemmeService.cloturerDossier(dossierId, dto);
+  }
+
+  @Delete(':dossierId')
+  supprimerDossier(@Param('dossierId') dossierId: string) {
+    return this.cpsFemmeService.supprimerDossier(dossierId);
   }
 
   // --- Visites CPS ---

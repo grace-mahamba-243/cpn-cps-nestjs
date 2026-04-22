@@ -12,8 +12,14 @@ import {
 
 // Ce DTO valide les donnees requises pour ouvrir un dossier CPN.
 export class CreerDossierCpnDto {
+  // Accepte soit le numero de dossier de la mere (AFIA-...) soit l UUID interne
+  @IsOptional()
   @IsString()
-  patienteId!: string;
+  numeroDossierMere?: string;
+
+  @IsOptional()
+  @IsString()
+  patienteId?: string;
 
   @IsDateString()
   dateOuverture!: string;

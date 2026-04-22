@@ -90,8 +90,11 @@ export class AccouchementEntity {
   @Column({ name: 'notes', type: 'text', nullable: true })
   notes: string | null;
 
-  @Column({ name: 'enregistre_par', type: 'varchar', length: 36, nullable: true })
+  @Column({ name: 'enregistre_par', type: 'varchar', length: 200, nullable: true })
   enregistrePar: string | null;
+
+  @Column({ name: 'modifie_par', type: 'varchar', length: 200, nullable: true })
+  modifiePar: string | null;
 
   @CreateDateColumn({ name: 'cree_le' })
   creeLe: Date;

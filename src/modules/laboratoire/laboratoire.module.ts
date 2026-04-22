@@ -11,6 +11,7 @@ import { ExamenCpsFemmeEntity } from '../cps-femme/entities/examen-cps-femme.ent
 import { DossierCpsFemmeEntity } from '../cps-femme/entities/dossier-cps-femme.entity';
 import { ExamenCpsEnfantEntity } from '../cps-enfant/entities/examen-cps-enfant.entity';
 import { DossierCpsEnfantEntity } from '../cps-enfant/entities/dossier-cps-enfant.entity';
+import { JournalModule } from '../journal/journal.module';
 
 // Ce module regroupe les composants du laboratoire : demandes, resultats et suivi.
 @Module({
@@ -19,7 +20,7 @@ import { DossierCpsEnfantEntity } from '../cps-enfant/entities/dossier-cps-enfan
     ExamenEnfantEntity, EnfantEntity,
     ExamenCpsFemmeEntity, DossierCpsFemmeEntity,
     ExamenCpsEnfantEntity, DossierCpsEnfantEntity,
-  ])],
+  ]), JournalModule],
   controllers: [LaboratoireController],
   providers: [LaboratoireService],
 })

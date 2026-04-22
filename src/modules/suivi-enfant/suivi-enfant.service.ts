@@ -3,6 +3,7 @@ import { InjectRepository } from '@nestjs/typeorm';
 import { Repository } from 'typeorm';
 import { SuiviEnfantEntity } from './entities/suivi-enfant.entity';
 import { CreerSuiviEnfantDto } from './dto/creer-suivi-enfant.dto';
+import { JournalService } from '../journal/journal.service';
 
 // Ce service centralise la logique metier du module suivi clinique enfant.
 @Injectable()
@@ -10,6 +11,7 @@ export class SuiviEnfantService {
   constructor(
     @InjectRepository(SuiviEnfantEntity)
     private readonly suiviRepository: Repository<SuiviEnfantEntity>,
+    private readonly journalService: JournalService,
   ) {}
 
   // Retourne l historique de suivi d un enfant trie par date decroissante.
@@ -52,7 +54,20 @@ export class SuiviEnfantService {
       traitementPrescrit: dto.traitementPrescrit ?? null,
       prochainRdvDate: dto.prochainRdvDate ?? null,
       observations: dto.observations ?? null,
+      enregistrePar: dto.utilisateurNom ?? null,
     });
-    return this.suiviRepository.save(entite);
+    const enregistre = await this.suiviRepository.save(entite);
+
+    this.journalService.enregistrer({
+      utilisateurId: dto.utilisateurId,
+      utilisateurNom: dto.utilisateurNom,
+      typeAction: 'CREATION',
+      module: 'SUIVI_ENFANT',
+      section: 'visite',
+      ressourceId: enregistre.id,
+      description: `Enregistrement d'une visite de suivi pour l'enfant #${dto.enfantId}.`,
+    });
+
+    return enregistre;
   }
 }

@@ -39,4 +39,12 @@ export class CreateUserDto {
 
   @IsBoolean()
   actif!: boolean;
+
+  @IsOptional()
+  @IsString()
+  utilisateurId?: string;
+
+  @IsOptional()
+  @IsString()
+  utilisateurNom?: string;
 }

@@ -1,4 +1,4 @@
-import { IsDateString, IsIn, IsOptional, IsString, MaxLength, MinLength } from 'class-validator';
+﻿import { IsDateString, IsIn, IsOptional, IsString, MaxLength, MinLength } from 'class-validator';
 
 // Ce DTO valide les donnees pour demander un examen dans le cadre du suivi postnatal enfant.
 export class CreerExamenCpsEnfantDto {
@@ -21,4 +21,11 @@ export class CreerExamenCpsEnfantDto {
   @IsOptional()
   @IsString()
   notes?: string | null;
+  @IsOptional()
+  @IsString()
+  utilisateurId?: string;
+
+  @IsOptional()
+  @IsString()
+  utilisateurNom?: string;
 }

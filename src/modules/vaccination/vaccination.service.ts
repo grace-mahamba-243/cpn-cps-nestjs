@@ -3,6 +3,7 @@ import { InjectRepository } from '@nestjs/typeorm';
 import { Repository } from 'typeorm';
 import { VaccinationDoseEntity } from './entities/vaccination-dose.entity';
 import { EnregistrerVaccinationDoseDto } from './dto/enregistrer-vaccination-dose.dto';
+import { JournalService } from '../journal/journal.service';
 
 // Ce service centralise la logique metier du module vaccination enfant.
 @Injectable()
@@ -10,6 +11,7 @@ export class VaccinationService {
   constructor(
     @InjectRepository(VaccinationDoseEntity)
     private readonly doseRepository: Repository<VaccinationDoseEntity>,
+    private readonly journalService: JournalService,
   ) {}
 
   // Retourne le calendrier vaccinal d un enfant (toutes les doses) trie par date.
@@ -41,7 +43,20 @@ export class VaccinationService {
       prochaineDoseDate: dto.prochaineDoseDate ?? null,
       observations: dto.observations ?? null,
       administrePar: dto.administrePar ?? null,
+      enregistrePar: dto.utilisateurNom ?? null,
     });
-    return this.doseRepository.save(entite);
+    const enregistre = await this.doseRepository.save(entite);
+
+    this.journalService.enregistrer({
+      utilisateurId: dto.utilisateurId,
+      utilisateurNom: dto.utilisateurNom,
+      typeAction: 'CREATION',
+      module: 'VACCINATION',
+      section: 'dose',
+      ressourceId: enregistre.id,
+      description: `Administration du vaccin ${dto.vaccin} (dose ${dto.numeroDose ?? 1}) pour l'enfant #${dto.enfantId}.`,
+    });
+
+    return enregistre;
   }
 }

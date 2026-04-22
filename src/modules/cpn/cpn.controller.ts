@@ -1,4 +1,4 @@
-import { Body, Controller, Get, Param, Patch, Post, Query } from '@nestjs/common';
+import { Body, Controller, Delete, Get, Param, Patch, Post, Query } from '@nestjs/common';
 import { CpnService } from './cpn.service';
 import { CreerDossierCpnDto } from './dto/creer-dossier-cpn.dto';
 import { ModifierDossierCpnDto } from './dto/modifier-dossier-cpn.dto';
@@ -33,6 +33,11 @@ export class CpnController {
   @Patch(':dossierId')
   modifierDossier(@Param('dossierId') dossierId: string, @Body() dto: ModifierDossierCpnDto) {
     return this.cpnService.modifierDossier(dossierId, dto);
+  }
+
+  @Delete(':dossierId')
+  supprimerDossier(@Param('dossierId') dossierId: string) {
+    return this.cpnService.supprimerDossier(dossierId);
   }
 
   // --- Contacts CPN ---

@@ -12,6 +12,7 @@ import { ExamenCpsEnfantEntity } from '../cps-enfant/entities/examen-cps-enfant.
 import { DossierCpsEnfantEntity } from '../cps-enfant/entities/dossier-cps-enfant.entity';
 import { PriseEnChargeDto } from './dto/prise-en-charge.dto';
 import { SaisirResultatDto } from './dto/saisir-resultat.dto';
+import { JournalService } from '../journal/journal.service';
 
 // Ce service centralise la logique metier du module laboratoire.
 @Injectable()
@@ -35,6 +36,7 @@ export class LaboratoireService {
     private readonly examensCpsEnfantRepo: Repository<ExamenCpsEnfantEntity>,
     @InjectRepository(DossierCpsEnfantEntity)
     private readonly dossiersCpsEnfantRepo: Repository<DossierCpsEnfantEntity>,
+    private readonly journalService: JournalService,
   ) {}
 
   // --- Liste des demandes par statut ---
@@ -148,7 +150,9 @@ export class LaboratoireService {
       examenCpn.statut = 'EN_COURS';
       examenCpn.prisEnChargeLe = new Date();
       if (dto.notes) examenCpn.notes = dto.notes;
+      examenCpn.modifiePar = dto.utilisateurNom ?? null;
       const enregistre = await this.examensRepo.save(examenCpn);
+      this.journalService.enregistrer({ utilisateurId: dto.utilisateurId, utilisateurNom: dto.utilisateurNom, typeAction: 'MODIFICATION', module: 'LABORATOIRE', section: 'prise-en-charge', ressourceId: examenId, description: `Prise en charge de l'examen "${examenCpn.libelle}" (CPN).`, meta: { ancienStatut: 'DEMANDE', nouveauStatut: 'EN_COURS' } });
       return { message: 'Demande prise en charge avec succes.', demande: await this.enrichirExamen(enregistre) };
     }
 
@@ -160,7 +164,9 @@ export class LaboratoireService {
       examenEnfant.statut = 'EN_COURS';
       examenEnfant.prisEnChargeLe = new Date();
       if (dto.notes) examenEnfant.notes = dto.notes;
+      examenEnfant.modifiePar = dto.utilisateurNom ?? null;
       const enregistre = await this.examensEnfantsRepo.save(examenEnfant);
+      this.journalService.enregistrer({ utilisateurId: dto.utilisateurId, utilisateurNom: dto.utilisateurNom, typeAction: 'MODIFICATION', module: 'LABORATOIRE', section: 'prise-en-charge', ressourceId: examenId, description: `Prise en charge de l'examen "${examenEnfant.libelle}" (Enfant).`, meta: { ancienStatut: 'DEMANDE', nouveauStatut: 'EN_COURS' } });
       return { message: 'Demande prise en charge avec succes.', demande: await this.enrichirExamenEnfant(enregistre) };
     }
 
@@ -172,7 +178,9 @@ export class LaboratoireService {
       examenCpsFemme.statut = 'EN_COURS';
       examenCpsFemme.prisEnChargeLe = new Date();
       if (dto.notes) examenCpsFemme.notes = dto.notes;
+      examenCpsFemme.modifiePar = dto.utilisateurNom ?? null;
       const enregistre = await this.examensCpsFemmeRepo.save(examenCpsFemme);
+      this.journalService.enregistrer({ utilisateurId: dto.utilisateurId, utilisateurNom: dto.utilisateurNom, typeAction: 'MODIFICATION', module: 'LABORATOIRE', section: 'prise-en-charge', ressourceId: examenId, description: `Prise en charge de l'examen "${examenCpsFemme.libelle}" (CPS Femme).`, meta: { ancienStatut: 'DEMANDE', nouveauStatut: 'EN_COURS' } });
       return { message: 'Demande prise en charge avec succes.', demande: await this.enrichirExamenCpsFemme(enregistre) };
     }
 
@@ -184,7 +192,9 @@ export class LaboratoireService {
       examenCpsEnfant.statut = 'EN_COURS';
       examenCpsEnfant.prisEnChargeLe = new Date();
       if (dto.notes) examenCpsEnfant.notes = dto.notes;
+      examenCpsEnfant.modifiePar = dto.utilisateurNom ?? null;
       const enregistre = await this.examensCpsEnfantRepo.save(examenCpsEnfant);
+      this.journalService.enregistrer({ utilisateurId: dto.utilisateurId, utilisateurNom: dto.utilisateurNom, typeAction: 'MODIFICATION', module: 'LABORATOIRE', section: 'prise-en-charge', ressourceId: examenId, description: `Prise en charge de l'examen "${examenCpsEnfant.libelle}" (CPS Enfant).`, meta: { ancienStatut: 'DEMANDE', nouveauStatut: 'EN_COURS' } });
       return { message: 'Demande prise en charge avec succes.', demande: await this.enrichirExamenCpsEnfant(enregistre) };
     }
 
@@ -204,6 +214,7 @@ export class LaboratoireService {
       if (!['DEMANDE', 'EN_COURS'].includes(examenCpn.statut)) {
         throw new BadRequestException(`Le resultat ne peut pas etre saisi pour le statut "${examenCpn.statut}".`);
       }
+      const ancienStatut = examenCpn.statut;
       examenCpn.resultat = dto.resultat.trim();
       examenCpn.dateExamen = dto.dateExamen ?? examenCpn.dateExamen;
       examenCpn.dateResultat = dto.dateResultat ?? new Date().toISOString().split('T')[0];
@@ -211,7 +222,9 @@ export class LaboratoireService {
       examenCpn.statut = 'RESULTAT_RECU';
       examenCpn.envoyeLe = new Date();
       if (!examenCpn.prisEnChargeLe) examenCpn.prisEnChargeLe = new Date();
+      examenCpn.modifiePar = dto.utilisateurNom ?? null;
       const enregistre = await this.examensRepo.save(examenCpn);
+      this.journalService.enregistrer({ utilisateurId: dto.utilisateurId, utilisateurNom: dto.utilisateurNom, typeAction: 'MODIFICATION', module: 'LABORATOIRE', section: 'resultat', ressourceId: examenId, description: `Résultat envoyé pour l'examen "${examenCpn.libelle}" (CPN).`, meta: { ancienStatut, nouveauStatut: 'RESULTAT_RECU' } });
       return { message: 'Resultat envoye au module clinique avec succes.', demande: await this.enrichirExamen(enregistre) };
     }
 
@@ -220,6 +233,7 @@ export class LaboratoireService {
       if (!['DEMANDE', 'EN_COURS'].includes(examenEnfant.statut)) {
         throw new BadRequestException(`Le resultat ne peut pas etre saisi pour le statut "${examenEnfant.statut}".`);
       }
+      const ancienStatut = examenEnfant.statut;
       examenEnfant.resultat = dto.resultat.trim();
       examenEnfant.dateExamen = dto.dateExamen ?? examenEnfant.dateExamen;
       examenEnfant.dateResultat = dto.dateResultat ?? new Date().toISOString().split('T')[0];
@@ -227,7 +241,9 @@ export class LaboratoireService {
       examenEnfant.statut = 'RESULTAT_RECU';
       examenEnfant.envoyeLe = new Date();
       if (!examenEnfant.prisEnChargeLe) examenEnfant.prisEnChargeLe = new Date();
+      examenEnfant.modifiePar = dto.utilisateurNom ?? null;
       const enregistre = await this.examensEnfantsRepo.save(examenEnfant);
+      this.journalService.enregistrer({ utilisateurId: dto.utilisateurId, utilisateurNom: dto.utilisateurNom, typeAction: 'MODIFICATION', module: 'LABORATOIRE', section: 'resultat', ressourceId: examenId, description: `Résultat envoyé pour l'examen "${examenEnfant.libelle}" (Enfant).`, meta: { ancienStatut, nouveauStatut: 'RESULTAT_RECU' } });
       return { message: 'Resultat envoye au module clinique avec succes.', demande: await this.enrichirExamenEnfant(enregistre) };
     }
 
@@ -236,6 +252,7 @@ export class LaboratoireService {
       if (!['DEMANDE', 'EN_COURS'].includes(examenCpsFemme.statut)) {
         throw new BadRequestException(`Le resultat ne peut pas etre saisi pour le statut "${examenCpsFemme.statut}".`);
       }
+      const ancienStatut = examenCpsFemme.statut;
       examenCpsFemme.resultat = dto.resultat.trim();
       examenCpsFemme.dateExamen = dto.dateExamen ?? examenCpsFemme.dateExamen;
       examenCpsFemme.dateResultat = dto.dateResultat ?? new Date().toISOString().split('T')[0];
@@ -243,7 +260,9 @@ export class LaboratoireService {
       examenCpsFemme.statut = 'RESULTAT_RECU';
       examenCpsFemme.envoyeLe = new Date();
       if (!examenCpsFemme.prisEnChargeLe) examenCpsFemme.prisEnChargeLe = new Date();
+      examenCpsFemme.modifiePar = dto.utilisateurNom ?? null;
       const enregistre = await this.examensCpsFemmeRepo.save(examenCpsFemme);
+      this.journalService.enregistrer({ utilisateurId: dto.utilisateurId, utilisateurNom: dto.utilisateurNom, typeAction: 'MODIFICATION', module: 'LABORATOIRE', section: 'resultat', ressourceId: examenId, description: `Résultat envoyé pour l'examen "${examenCpsFemme.libelle}" (CPS Femme).`, meta: { ancienStatut, nouveauStatut: 'RESULTAT_RECU' } });
       return { message: 'Resultat envoye au module clinique avec succes.', demande: await this.enrichirExamenCpsFemme(enregistre) };
     }
 
@@ -252,6 +271,7 @@ export class LaboratoireService {
       if (!['DEMANDE', 'EN_COURS'].includes(examenCpsEnfant.statut)) {
         throw new BadRequestException(`Le resultat ne peut pas etre saisi pour le statut "${examenCpsEnfant.statut}".`);
       }
+      const ancienStatut = examenCpsEnfant.statut;
       examenCpsEnfant.resultat = dto.resultat.trim();
       examenCpsEnfant.dateExamen = dto.dateExamen ?? examenCpsEnfant.dateExamen;
       examenCpsEnfant.dateResultat = dto.dateResultat ?? new Date().toISOString().split('T')[0];
@@ -259,7 +279,9 @@ export class LaboratoireService {
       examenCpsEnfant.statut = 'RESULTAT_RECU';
       examenCpsEnfant.envoyeLe = new Date();
       if (!examenCpsEnfant.prisEnChargeLe) examenCpsEnfant.prisEnChargeLe = new Date();
+      examenCpsEnfant.modifiePar = dto.utilisateurNom ?? null;
       const enregistre = await this.examensCpsEnfantRepo.save(examenCpsEnfant);
+      this.journalService.enregistrer({ utilisateurId: dto.utilisateurId, utilisateurNom: dto.utilisateurNom, typeAction: 'MODIFICATION', module: 'LABORATOIRE', section: 'resultat', ressourceId: examenId, description: `Résultat envoyé pour l'examen "${examenCpsEnfant.libelle}" (CPS Enfant).`, meta: { ancienStatut, nouveauStatut: 'RESULTAT_RECU' } });
       return { message: 'Resultat envoye au module clinique avec succes.', demande: await this.enrichirExamenCpsEnfant(enregistre) };
     }
 

@@ -69,4 +69,12 @@ export class AnalyserVisiteCpsDto {
   @IsOptional()
   @IsString()
   typeVisite?: string;
+
+  @IsOptional()
+  @IsString()
+  utilisateurId?: string;
+
+  @IsOptional()
+  @IsString()
+  utilisateurNom?: string;
 }

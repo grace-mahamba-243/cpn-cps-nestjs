@@ -1,4 +1,4 @@
-import {
+﻿import {
   IsDateString,
   IsIn,
   IsInt,
@@ -59,4 +59,11 @@ export class EnregistrerVaccinationDoseDto {
   @IsString()
   @Length(1, 150)
   administrePar?: string;
+  @IsOptional()
+  @IsString()
+  utilisateurId?: string;
+
+  @IsOptional()
+  @IsString()
+  utilisateurNom?: string;
 }

@@ -10,7 +10,6 @@ import {
 } from 'typeorm';
 import { PatienteEntity } from '../../patientes/entities/patiente.entity';
 import { SuiviEnfantEntity } from '../../suivi-enfant/entities/suivi-enfant.entity';
-import { NutritionEnfantEntity } from '../../nutrition/entities/nutrition-enfant.entity';
 import { VaccinationDoseEntity } from '../../vaccination/entities/vaccination-dose.entity';
 
 // Cette entite represente le dossier enfant central : identite, naissance et liens vers les sous-modules.
@@ -45,6 +44,13 @@ export class EnfantEntity {
   @ManyToOne(() => PatienteEntity, { nullable: true, eager: false })
   @JoinColumn({ name: 'patiente_id' })
   patiente: PatienteEntity | null;
+
+  // --- Lien accouchement / nouveau-ne sélectionné (optionnel) ---
+  @Column({ name: 'accouchement_id', type: 'char', length: 36, nullable: true })
+  accouchementId: string | null;
+
+  @Column({ name: 'index_nouveau_ne', type: 'int', nullable: true })
+  indexNouveauNe: number | null;
 
   // --- Informations de naissance ---
   // INTERNE = accouchement realise dans la structure ; EXTERNE = accouchement survenu ailleurs
@@ -91,11 +97,14 @@ export class EnfantEntity {
   @OneToMany(() => SuiviEnfantEntity, (s) => s.enfant)
   suivis: SuiviEnfantEntity[];
 
-  @OneToMany(() => NutritionEnfantEntity, (n) => n.enfant)
-  nutritions: NutritionEnfantEntity[];
-
   @OneToMany(() => VaccinationDoseEntity, (v) => v.enfant)
   doses: VaccinationDoseEntity[];
+
+  @Column({ name: 'enregistre_par', type: 'varchar', length: 200, nullable: true })
+  enregistrePar: string | null;
+
+  @Column({ name: 'modifie_par', type: 'varchar', length: 200, nullable: true })
+  modifiePar: string | null;
 
   @CreateDateColumn({ name: 'cree_le' })
   creeLe: Date;

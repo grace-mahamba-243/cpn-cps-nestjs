@@ -1,4 +1,4 @@
-import {
+﻿import {
   IsBoolean,
   IsDateString,
   IsIn,
@@ -106,4 +106,11 @@ export class CreerSuiviEnfantDto {
   @IsOptional()
   @IsString()
   observations?: string;
+  @IsOptional()
+  @IsString()
+  utilisateurId?: string;
+
+  @IsOptional()
+  @IsString()
+  utilisateurNom?: string;
 }

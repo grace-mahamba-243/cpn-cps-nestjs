@@ -52,6 +52,12 @@ export class ExamenCpsEnfantEntity {
   @Column({ name: 'envoye_le', type: 'datetime', nullable: true })
   envoyeLe: Date | null;
 
+  @Column({ name: 'enregistre_par', type: 'varchar', length: 200, nullable: true })
+  enregistrePar: string | null;
+
+  @Column({ name: 'modifie_par', type: 'varchar', length: 200, nullable: true })
+  modifiePar: string | null;
+
   @CreateDateColumn({ name: 'cree_le' })
   creeLe: Date;
 

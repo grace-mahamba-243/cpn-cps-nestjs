@@ -71,4 +71,12 @@ export class AnalyserContactCpnDto {
   @IsOptional()
   @IsBoolean()
   ulcerationsGenitales?: boolean;
+
+  @IsOptional()
+  @IsString()
+  utilisateurId?: string;
+
+  @IsOptional()
+  @IsString()
+  utilisateurNom?: string;
 }

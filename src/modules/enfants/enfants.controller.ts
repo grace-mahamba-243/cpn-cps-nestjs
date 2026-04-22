@@ -15,6 +15,15 @@ export class EnfantsController {
     return this.enfantsService.findAll(recherche);
   }
 
+  // Retourne le dossier enfant lié à un accouchement + index nouveau-né (si existe).
+  @Get('par-accouchement/:accouchementId/:indexNouveauNe')
+  findByAccouchementAndIndex(
+    @Param('accouchementId') accouchementId: string,
+    @Param('indexNouveauNe') indexNouveauNe: string,
+  ) {
+    return this.enfantsService.findByAccouchementAndIndex(accouchementId, Number(indexNouveauNe));
+  }
+
   // Retourne le detail d un enfant par son identifiant.
   @Get(':id')
   findOne(@Param('id') id: string) {

@@ -2,8 +2,14 @@ import { IsDateString, IsIn, IsInt, IsOptional, IsString, IsUUID, Min } from 'cl
 
 // DTO de creation d un accouchement : valide toutes les donnees reçues du formulaire.
 export class CreerAccouchementDto {
-  @IsUUID()
-  patienteId: string;
+  // Accepte soit le numero de dossier de la mere (AFIA-...) soit l UUID interne
+  @IsOptional()
+  @IsString()
+  numeroDossierMere?: string;
+
+  @IsOptional()
+  @IsString()
+  patienteId?: string;
 
   @IsOptional()
   @IsUUID()
@@ -69,4 +75,12 @@ export class CreerAccouchementDto {
   @IsOptional()
   @IsString()
   notes?: string;
+
+  @IsOptional()
+  @IsString()
+  utilisateurId?: string;
+
+  @IsOptional()
+  @IsString()
+  utilisateurNom?: string;
 }

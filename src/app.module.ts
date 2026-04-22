@@ -12,12 +12,8 @@ import { CpsFemmeModule } from './modules/cps-femme/cps-femme.module';
 import { DashboardModule } from './modules/dashboard/dashboard.module';
 import { DossiersModule } from './modules/dossiers/dossiers.module';
 import { EnfantsModule } from './modules/enfants/enfants.module';
-import { GrossessesModule } from './modules/grossesses/grossesses.module';
-import { ImpressionsModule } from './modules/impressions/impressions.module';
 import { LaboratoireModule } from './modules/laboratoire/laboratoire.module';
-import { NutritionModule } from './modules/nutrition/nutrition.module';
 import { PatientesModule } from './modules/patientes/patientes.module';
-import { PharmacieModule } from './modules/pharmacie/pharmacie.module';
 import { RendezVousModule } from './modules/rendez-vous/rendez-vous.module';
 import { RolesModule } from './modules/roles/roles.module';
 import { SuiviEnfantModule } from './modules/suivi-enfant/suivi-enfant.module';
@@ -52,20 +48,16 @@ import { VaccinationModule } from './modules/vaccination/vaccination.module';
     UsersModule,
     RolesModule,
     PatientesModule,
-    GrossessesModule,
     CpnModule,
     AccouchementsModule,
     CpsFemmeModule,
     CpsEnfantModule,
     EnfantsModule,
     SuiviEnfantModule,
-    NutritionModule,
     VaccinationModule,
     RendezVousModule,
     DossiersModule,
     LaboratoireModule,
-    PharmacieModule,
-    ImpressionsModule,
     DashboardModule,
   ],
 })

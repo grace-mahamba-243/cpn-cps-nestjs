@@ -8,6 +8,7 @@ import { InjectRepository } from '@nestjs/typeorm';
 import { randomUUID } from 'node:crypto';
 import { Repository } from 'typeorm';
 import { ConnexionDto } from './dto/connexion.dto';
+import { ChangerMotDePasseDto } from './dto/changer-mot-de-passe.dto';
 import { DeconnexionDto } from './dto/deconnexion.dto';
 import { SessionAuthentificationEntity } from './entities/session-authentification.entity';
 import { UtilisateurAuthEntity } from './entities/utilisateur-auth.entity';
@@ -32,6 +33,7 @@ export class AuthService {
       message: 'Endpoints d authentification relies a MySQL via TypeORM.',
       endpoints: {
         connexion: 'POST /api/auth/connexion',
+        changementMotDePasse: 'POST /api/auth/changer-mot-de-passe',
         deconnexion: 'POST /api/auth/deconnexion',
         profil: 'GET /api/auth/profil/:identifiant',
         tables: 'GET /api/auth/tables',
@@ -97,6 +99,36 @@ export class AuthService {
       identifiant: utilisateur.identifiant,
       sessionId: deconnexionDto.sessionId ?? null,
       mode: 'typeorm-mysql',
+    };
+  }
+
+  async changerMotDePasse(changerMotDePasseDto: ChangerMotDePasseDto) {
+    const identifiant = changerMotDePasseDto.identifiant.trim().toLowerCase();
+    const motDePasseActuel = changerMotDePasseDto.motDePasseActuel.trim();
+    const nouveauMotDePasse = changerMotDePasseDto.nouveauMotDePasse.trim();
+    const utilisateur = await this.trouverUtilisateur(identifiant);
+
+    if (!utilisateur) {
+      throw new NotFoundException('Utilisateur introuvable.');
+    }
+
+    if (utilisateur.motDePasseHash !== motDePasseActuel) {
+      throw new UnauthorizedException('Le mot de passe actuel est invalide.');
+    }
+
+    if (motDePasseActuel === nouveauMotDePasse) {
+      throw new ForbiddenException('Le nouveau mot de passe doit être différent du mot de passe actuel.');
+    }
+
+    utilisateur.motDePasseHash = nouveauMotDePasse;
+    utilisateur.doitChangerMotDePasse = false;
+    utilisateur.modifiePar = utilisateur.nomAffichage;
+
+    const utilisateurMisAJour = await this.utilisateursRepository.save(utilisateur);
+
+    return {
+      message: 'Mot de passe modifié avec succès.',
+      utilisateur: this.formaterUtilisateur(utilisateurMisAJour),
     };
   }
 
@@ -192,6 +224,7 @@ export class AuthService {
       nomAffichage: utilisateur.nomAffichage,
       role: utilisateur.role.libelle,
       roleCode: utilisateur.role.code,
+      doitChangerMotDePasse: utilisateur.doitChangerMotDePasse,
       actif: utilisateur.actif,
       dernierAccesAt: utilisateur.dernierAccesAt,
     };

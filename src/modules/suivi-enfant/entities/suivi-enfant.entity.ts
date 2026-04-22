@@ -94,6 +94,12 @@ export class SuiviEnfantEntity {
   @Column({ type: 'text', nullable: true })
   observations: string | null;
 
+  @Column({ name: 'enregistre_par', type: 'varchar', length: 200, nullable: true })
+  enregistrePar: string | null;
+
+  @Column({ name: 'modifie_par', type: 'varchar', length: 200, nullable: true })
+  modifiePar: string | null;
+
   @CreateDateColumn({ name: 'cree_le' })
   creeLe: Date;
 

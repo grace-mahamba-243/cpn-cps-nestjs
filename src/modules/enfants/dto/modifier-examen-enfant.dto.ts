@@ -1,4 +1,4 @@
-import { IsDateString, IsIn, IsOptional, IsString } from 'class-validator';
+﻿import { IsDateString, IsIn, IsOptional, IsString } from 'class-validator';
 
 // Ce DTO valide les donnees pour modifier (resultat, statut) un examen enfant.
 export class ModifierExamenEnfantDto {
@@ -21,4 +21,11 @@ export class ModifierExamenEnfantDto {
   @IsOptional()
   @IsString()
   notes?: string | null;
+  @IsOptional()
+  @IsString()
+  utilisateurId?: string;
+
+  @IsOptional()
+  @IsString()
+  utilisateurNom?: string;
 }

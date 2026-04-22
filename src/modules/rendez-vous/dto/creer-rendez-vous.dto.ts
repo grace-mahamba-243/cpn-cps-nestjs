@@ -1,4 +1,4 @@
-import { IsDateString, IsIn, IsOptional, IsString, Length, Matches } from 'class-validator';
+import { IsDateString, IsIn, IsOptional, IsString, IsUUID, Length, Matches } from 'class-validator';
 
 // DTO de creation d un rendez-vous. Valide les champs obligatoires et les valeurs acceptees.
 export class CreerRendezVousDto {
@@ -62,4 +62,12 @@ export class CreerRendezVousDto {
   @IsString()
   @Length(1, 200)
   creePar?: string;
+
+  @IsOptional()
+  @IsString()
+  utilisateurId?: string;
+
+  @IsOptional()
+  @IsString()
+  utilisateurNom?: string;
 }

@@ -5,7 +5,7 @@ import {
   NotFoundException,
 } from '@nestjs/common';
 import { InjectRepository } from '@nestjs/typeorm';
-import { Like, Repository } from 'typeorm';
+import { Like, Repository, Not, In } from 'typeorm';
 import OpenAI from 'openai';
 import { AnalyserVisiteCpsDto } from './dto/analyser-visite-cps.dto';
 import { DossierCpsFemmeEntity } from './entities/dossier-cps-femme.entity';
@@ -23,6 +23,7 @@ import { ModifierDossierCpsDto } from './dto/modifier-dossier-cps.dto';
 import { CreerVisiteCpsDto } from './dto/creer-visite-cps.dto';
 import { ModifierVisiteCpsDto } from './dto/modifier-visite-cps.dto';
 import { JournalService } from '../journal/journal.service';
+import { RendezVousEntity } from '../rendez-vous/entities/rendez-vous.entity';
 
 // Ce service centralise toute la logique metier du module CPS Femme (suivi postnatal).
 @Injectable()
@@ -45,6 +46,8 @@ export class CpsFemmeService {
     private readonly enfantsRepo: Repository<EnfantEntity>,
     @InjectRepository(ExamenCpsFemmeEntity)
     private readonly examensCpsFemmeRepo: Repository<ExamenCpsFemmeEntity>,
+    @InjectRepository(RendezVousEntity)
+    private readonly rdvRepo: Repository<RendezVousEntity>,
     private readonly journalService: JournalService,
   ) {}
 
@@ -279,6 +282,7 @@ export class CpsFemmeService {
       vihStatut: dto.vihStatut ?? 'INCONNU',
       notes: dto.notes ?? null,
       statut: 'OUVERT',
+      enregistrePar: dto.utilisateurNom ?? null,
     });
 
     const enregistre = await this.dossiersRepo.save(dossier);
@@ -326,6 +330,7 @@ export class CpsFemmeService {
       rhesus: typeof dto.rhesus !== 'undefined' ? dto.rhesus : dossier.rhesus,
       vihStatut: dto.vihStatut ?? dossier.vihStatut,
       notes: typeof dto.notes !== 'undefined' ? dto.notes : dossier.notes,
+      modifiePar: dto.utilisateurNom ?? null,
     });
 
     const enregistre = await this.dossiersRepo.save(dossier);
@@ -364,6 +369,7 @@ export class CpsFemmeService {
     dossier.dateCloture = new Date().toISOString().split('T')[0];
     dossier.closPar = dto.closPar;
     dossier.notesCloture = dto.notesCloture ?? null;
+    dossier.modifiePar = dto.utilisateurNom ?? null;
 
     await this.dossiersRepo.save(dossier);
 
@@ -378,6 +384,24 @@ export class CpsFemmeService {
     });
 
     return { message: 'Dossier CPS cloture avec succes.' };
+  }
+
+  async supprimerDossier(id: string) {
+    const dossier = await this.dossiersRepo.findOne({ where: { id } });
+    if (!dossier) throw new NotFoundException(`Dossier CPS Femme #${id} introuvable.`);
+
+    const nbVisites = await this.visitesRepo.count({ where: { dossierCpsId: id } });
+    if (nbVisites > 0) {
+      throw new BadRequestException('Ce dossier CPS Femme contient des visites et ne peut pas être supprimé.');
+    }
+
+    const nbExamens = await this.examensCpsFemmeRepo.count({ where: { dossierId: id } });
+    if (nbExamens > 0) {
+      throw new BadRequestException('Ce dossier CPS Femme contient des examens et ne peut pas être supprimé.');
+    }
+
+    await this.dossiersRepo.remove(dossier);
+    return { message: 'Dossier CPS Femme supprimé avec succès.' };
   }
 
   // --- Visites CPS ---
@@ -445,6 +469,7 @@ export class CpsFemmeService {
       traitementPrescrit: dto.traitementPrescrit ?? null,
       prochainRdvDate: dto.prochainRdvDate ?? null,
       observations: dto.observations ?? null,
+      enregistrePar: dto.utilisateurNom ?? null,
     });
 
     const enregistree = await this.visitesRepo.save(visite);
@@ -458,6 +483,38 @@ export class CpsFemmeService {
       ressourceId: enregistree.id,
       description: `Ajout de la visite ${enregistree.typeVisite} (n°${enregistree.numeroVisite}) pour le dossier ${dossierId}`,
     });
+
+    // Créer automatiquement un rendez-vous EN_ATTENTE si une date de prochain RDV est définie
+    if (dto.prochainRdvDate) {
+      try {
+        const existant = await this.rdvRepo.findOne({
+          where: { refDossier: dossier.numeroDossierCps, dateRdv: dto.prochainRdvDate, statut: Not(In(['ANNULE', 'TERMINE'])) },
+        });
+        if (!existant) {
+          const patiente = dossier.patienteId
+            ? await this.patientesRepo.findOne({ where: { id: dossier.patienteId } })
+            : null;
+          const nom = patiente
+            ? [patiente.nom, patiente.postnom, patiente.prenom].filter(Boolean).join(' ')
+            : dossier.numeroDossierCps;
+          const initiales = nom.trim().split(/\s+/).slice(0, 2).map((m) => m.charAt(0).toUpperCase()).join('') || '?';
+          await this.rdvRepo.save(this.rdvRepo.create({
+            dateRdv: dto.prochainRdvDate,
+            heureRdv: '08:00',
+            motif: 'Visite CPS Femme',
+            statut: 'EN_ATTENTE',
+            typeRdv: 'PROGRAMME',
+            nomPatient: nom,
+            initialesPatient: initiales,
+            typePatient: 'Mere',
+            refDossier: dossier.numeroDossierCps,
+            serviceDestination: 'CPS Femme',
+            creePar: dto.utilisateurNom ?? null,
+            enregistrePar: dto.utilisateurNom ?? null,
+          }));
+        }
+      } catch { /* Silencieux : ne pas bloquer la visite si le RDV échoue */ }
+    }
 
     return {
       message: `Visite ${enregistree.typeVisite} enregistree avec succes.`,
@@ -478,6 +535,8 @@ export class CpsFemmeService {
       where: { id: visiteId, dossierCpsId: dossierId },
     });
     if (!visite) throw new NotFoundException(`Visite CPS #${visiteId} introuvable.`);
+
+    const ancienProchainRdvDate = visite.prochainRdvDate ?? null;
 
     Object.assign(visite, {
       dateVisite: dto.dateVisite ?? visite.dateVisite,
@@ -518,6 +577,7 @@ export class CpsFemmeService {
       prochainRdvDate:
         typeof dto.prochainRdvDate !== 'undefined' ? dto.prochainRdvDate : visite.prochainRdvDate,
       observations: typeof dto.observations !== 'undefined' ? dto.observations : visite.observations,
+      modifiePar: dto.utilisateurNom ?? null,
     });
 
     const enregistree = await this.visitesRepo.save(visite);
@@ -531,6 +591,110 @@ export class CpsFemmeService {
       ressourceId: enregistree.id,
       description: `Modification visite ${enregistree.typeVisite} du dossier ${dossierId}`,
     });
+
+    // Synchroniser le rendez-vous avec la date réellement enregistrée sur la visite.
+    if (enregistree.prochainRdvDate) {
+      try {
+        const dossier = await this.dossiersRepo.findOne({ where: { id: dossierId } });
+        if (dossier?.numeroDossierCps) {
+          const dateCible = enregistree.prochainRdvDate;
+
+          const dejaSurNouvelleDate = await this.rdvRepo.findOne({
+            where: {
+              refDossier: dossier.numeroDossierCps,
+              dateRdv: dateCible,
+              serviceDestination: 'CPS Femme',
+              motif: 'Visite CPS Femme',
+              statut: Not(In(['ANNULE', 'TERMINE'])),
+            },
+          });
+
+          if (!dejaSurNouvelleDate && ancienProchainRdvDate && ancienProchainRdvDate !== dateCible) {
+            const existantAncienneDate = await this.rdvRepo.findOne({
+              where: {
+                refDossier: dossier.numeroDossierCps,
+                dateRdv: ancienProchainRdvDate,
+                serviceDestination: 'CPS Femme',
+                motif: 'Visite CPS Femme',
+                statut: Not(In(['ANNULE', 'TERMINE'])),
+              },
+            });
+
+            if (existantAncienneDate) {
+              existantAncienneDate.dateRdv = dateCible;
+              existantAncienneDate.statut = 'REPROGRAMME';
+              existantAncienneDate.modifiePar = dto.utilisateurNom ?? null;
+              await this.rdvRepo.save(existantAncienneDate);
+            }
+          }
+
+          if (!dejaSurNouvelleDate && (!ancienProchainRdvDate || ancienProchainRdvDate === dateCible)) {
+            const rdvAReprogrammer = await this.rdvRepo.findOne({
+              where: {
+                refDossier: dossier.numeroDossierCps,
+                dateRdv: Not(dateCible),
+                serviceDestination: 'CPS Femme',
+                motif: 'Visite CPS Femme',
+                statut: Not(In(['ANNULE', 'TERMINE'])),
+              },
+              order: { creeLe: 'DESC' },
+            });
+
+            if (rdvAReprogrammer) {
+              rdvAReprogrammer.dateRdv = dateCible;
+              rdvAReprogrammer.statut = 'REPROGRAMME';
+              rdvAReprogrammer.modifiePar = dto.utilisateurNom ?? null;
+              await this.rdvRepo.save(rdvAReprogrammer);
+            }
+          }
+
+          const existant = await this.rdvRepo.findOne({
+            where: {
+              refDossier: dossier.numeroDossierCps,
+              dateRdv: dateCible,
+              serviceDestination: 'CPS Femme',
+              motif: 'Visite CPS Femme',
+              statut: Not(In(['ANNULE', 'TERMINE'])),
+            },
+          });
+
+          if (!existant) {
+            const patiente = dossier.patienteId
+              ? await this.patientesRepo.findOne({ where: { id: dossier.patienteId } })
+              : null;
+            const nom = patiente
+              ? [patiente.nom, patiente.postnom, patiente.prenom].filter(Boolean).join(' ')
+              : dossier.numeroDossierCps;
+            const initiales =
+              nom
+                .trim()
+                .split(/\s+/)
+                .slice(0, 2)
+                .map((m: string) => m.charAt(0).toUpperCase())
+                .join('') || '?';
+
+            await this.rdvRepo.save(
+              this.rdvRepo.create({
+                dateRdv: dateCible,
+                heureRdv: '08:00',
+                motif: 'Visite CPS Femme',
+                statut: 'EN_ATTENTE',
+                typeRdv: 'PROGRAMME',
+                nomPatient: nom,
+                initialesPatient: initiales,
+                typePatient: 'Mere',
+                refDossier: dossier.numeroDossierCps,
+                serviceDestination: 'CPS Femme',
+                creePar: dto.utilisateurNom ?? null,
+                enregistrePar: dto.utilisateurNom ?? null,
+              }),
+            );
+          }
+        }
+      } catch {
+        // Silencieux : ne pas bloquer la modification de la visite si le RDV échoue.
+      }
+    }
 
     return { message: 'Visite CPS mise a jour.', visite: this.formaterVisite(enregistree) };
   }
@@ -606,6 +770,8 @@ export class CpsFemmeService {
       notes: d.notes,
       visites: d.visites?.map((v) => this.formaterVisite(v)) ?? [],
       creeLe: d.creeLe,
+      enregistrePar: d.enregistrePar,
+      modifiePar: d.modifiePar,
     };
   }
 
@@ -683,6 +849,8 @@ export class CpsFemmeService {
       prochainRdvDate: v.prochainRdvDate,
       observations: v.observations,
       creeLe: v.creeLe,
+      enregistrePar: v.enregistrePar,
+      modifiePar: v.modifiePar,
     };
   }
 

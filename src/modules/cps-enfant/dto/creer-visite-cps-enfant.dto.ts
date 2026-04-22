@@ -1,4 +1,4 @@
-import { IsBoolean, IsDateString, IsIn, IsInt, IsNotEmpty, IsNumber, IsOptional, IsString } from 'class-validator';
+﻿import { IsBoolean, IsDateString, IsIn, IsInt, IsNotEmpty, IsNumber, IsOptional, IsString } from 'class-validator';
 
 // DTO de création d une visite CPS Enfant.
 export class CreerVisiteCpsEnfantDto {
@@ -117,4 +117,11 @@ export class CreerVisiteCpsEnfantDto {
   @IsOptional()
   @IsString()
   observations?: string;
+  @IsOptional()
+  @IsString()
+  utilisateurId?: string;
+
+  @IsOptional()
+  @IsString()
+  utilisateurNom?: string;
 }
